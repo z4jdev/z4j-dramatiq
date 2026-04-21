@@ -1,0 +1,52 @@
+[project]
+name = "z4j-dramatiq"
+version = "1.0.1"
+description = "z4j Dramatiq queue engine adapter (Apache 2.0)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "z4j contributors" }]
+keywords = ["z4j", "dramatiq", "task", "queue", "redis", "rabbitmq"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Distributed Computing",
+    "Typing :: Typed",
+]
+dependencies = [
+    "z4j-core",
+    "dramatiq>=2.1.0",
+]
+
+[project.optional-dependencies]
+# Brokers - Dramatiq supports both natively, and z4j-dramatiq's
+# multi-broker claim is load-bearing per multi-engine plan §13.3.
+# Pick whichever your stack uses; both are first-class.
+#
+# We defer to the dramatiq broker extras for the redis / rabbitmq
+# version ranges rather than duplicating them here, because other
+# adapters (notably arq) cap redis differently and duplicating pins
+# blows up pip's resolver when both are installed in the same env.
+redis = ["dramatiq[redis]>=2.1.0"]
+rabbitmq = ["dramatiq[rabbitmq]>=2.1.0"]
+
+[project.urls]
+Changelog = "https://github.com/z4jdev/z4j-dramatiq/blob/main/CHANGELOG.md"
+Documentation = "https://z4j.dev"
+Homepage = "https://z4j.com"
+Issues = "https://github.com/z4jdev/z4j-dramatiq/issues"
+Source = "https://github.com/z4jdev/z4j-dramatiq"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/z4j_dramatiq"]
