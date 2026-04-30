@@ -6,15 +6,48 @@
 
 The Dramatiq engine adapter for [z4j](https://z4j.com).
 
-Streams Dramatiq actor lifecycle events to the z4j brain and
-accepts control actions (retry, cancel, bulk retry, purge) from
-the dashboard. For schedules, pair with [z4j-scheduler](https://github.com/z4jdev/z4j-scheduler).
+Streams every Dramatiq actor lifecycle event from your workers to the
+z4j brain and accepts operator control actions from the dashboard.
+Dramatiq has no upstream scheduler, so for periodic schedules pair with
+[`z4j-scheduler`](https://github.com/z4jdev/z4j-scheduler).
+
+## What it ships
+
+| Capability | Notes |
+|---|---|
+| Message lifecycle events | enqueued, started, succeeded, failed, retried, skipped |
+| Actor discovery | runtime registry merge + static scan |
+| Submit / retry / cancel | direct against the Dramatiq broker |
+| Bulk retry | filter-driven; re-enqueues matching messages |
+| Purge queue | with confirm-token guard |
+| Reconcile task | via Redis / RabbitMQ broker introspection |
+
+Captured via Dramatiq's middleware hook system — your existing actors
+do not need to be decorated or modified.
 
 ## Install
 
 ```bash
 pip install z4j-dramatiq
 ```
+
+Pair with a framework adapter:
+
+```bash
+pip install z4j-django  z4j-dramatiq   # Django
+pip install z4j-flask   z4j-dramatiq   # Flask
+pip install z4j-fastapi z4j-dramatiq   # FastAPI
+pip install z4j-bare    z4j-dramatiq   # framework-free worker
+```
+
+For schedules, install [`z4j-scheduler`](https://github.com/z4jdev/z4j-scheduler) as a separate process.
+
+## Reliability
+
+- No exception from the adapter ever propagates back into Dramatiq
+  middleware or your actor code.
+- Events buffer locally when the brain is unreachable; workers never
+  block on network I/O.
 
 ## Documentation
 
