@@ -22,7 +22,7 @@ Dramatiq has no upstream scheduler, so for periodic schedules pair with
 | Purge queue | with confirm-token guard |
 | Reconcile task | via Redis / RabbitMQ broker introspection |
 
-Captured via Dramatiq's middleware hook system — your existing actors
+Captured via Dramatiq's middleware hook system, your existing actors
 do not need to be decorated or modified.
 
 ## Install
@@ -55,7 +55,7 @@ Full docs at [z4j.dev/engines/dramatiq/](https://z4j.dev/engines/dramatiq/).
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0, see [LICENSE](LICENSE).
 
 ## Links
 
