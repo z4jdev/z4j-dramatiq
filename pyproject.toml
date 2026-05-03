@@ -1,6 +1,6 @@
 [project]
 name = "z4j-dramatiq"
-version = "1.3.0"
+version = "1.4.0"
 description = "z4j Dramatiq queue engine adapter (Apache 2.0)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,7 +21,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "z4j-core>=1.3.0,<2",
+    "z4j-core>=1.4.0,<2",
     "dramatiq>=2.1.0",
 ]
 

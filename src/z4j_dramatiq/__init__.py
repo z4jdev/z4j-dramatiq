@@ -18,7 +18,7 @@ from z4j_dramatiq.engine import DramatiqEngineAdapter
 from z4j_dramatiq.events.middleware import Z4JMiddleware
 from z4j_dramatiq.meta import TaskMeta, z4j_meta
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 __all__ = [
     "DramatiqEngineAdapter",

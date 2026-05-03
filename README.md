@@ -7,7 +7,7 @@
 The Dramatiq engine adapter for [z4j](https://z4j.com).
 
 Streams every Dramatiq actor lifecycle event from your workers to the
-z4j brain and accepts operator control actions from the dashboard.
+z4j and accepts operator control actions from the dashboard.
 Dramatiq has no upstream scheduler, so for periodic schedules pair with
 [`z4j-scheduler`](https://github.com/z4jdev/z4j-scheduler).
 
@@ -46,7 +46,7 @@ For schedules, install [`z4j-scheduler`](https://github.com/z4jdev/z4j-scheduler
 
 - No exception from the adapter ever propagates back into Dramatiq
   middleware or your actor code.
-- Events buffer locally when the brain is unreachable; workers never
+- Events buffer locally when z4j is unreachable; workers never
   block on network I/O.
 
 ## Documentation
