@@ -36,7 +36,7 @@ from z4j_dramatiq.discovery import discover_runtime
 from z4j_dramatiq.events.mapper import DRAMATIQ_ENGINE_NAME
 from z4j_dramatiq.events.middleware import Z4JMiddleware
 
-logger = logging.getLogger("z4j.agent.dramatiq.engine")
+logger = logging.getLogger("z4j.adapter.dramatiq.engine")
 
 
 class DramatiqEngineAdapter:

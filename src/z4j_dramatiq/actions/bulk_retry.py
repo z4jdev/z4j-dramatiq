@@ -32,7 +32,7 @@ from z4j_core.models import CommandResult
 
 from z4j_dramatiq.actions.retry import retry_task_action
 
-logger = logging.getLogger("z4j.agent.dramatiq.actions.bulk_retry")
+logger = logging.getLogger("z4j.adapter.dramatiq.actions.bulk_retry")
 
 _MAX_ABSOLUTE = 10_000
 _YIELD_EVERY = 100

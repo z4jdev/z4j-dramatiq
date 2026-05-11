@@ -14,7 +14,7 @@ from z4j_core.models import TaskDefinition
 
 from z4j_dramatiq.events.mapper import DRAMATIQ_ENGINE_NAME
 
-logger = logging.getLogger("z4j.agent.dramatiq.discovery")
+logger = logging.getLogger("z4j.adapter.dramatiq.discovery")
 
 
 def discover_runtime(broker: Any) -> list[TaskDefinition]:

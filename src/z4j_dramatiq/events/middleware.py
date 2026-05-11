@@ -38,7 +38,7 @@ from z4j_core.redaction.engine import RedactionEngine
 
 from z4j_dramatiq.events.mapper import build_event
 
-logger = logging.getLogger("z4j.agent.dramatiq.middleware")
+logger = logging.getLogger("z4j.adapter.dramatiq.middleware")
 
 
 # Subclass dramatiq.Middleware lazily - many test environments

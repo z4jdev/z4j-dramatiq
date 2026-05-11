@@ -26,7 +26,7 @@ from z4j_core.models import CommandResult
 
 from z4j_dramatiq.actions.retry import retry_task_action
 
-logger = logging.getLogger("z4j.agent.dramatiq.actions.dlq")
+logger = logging.getLogger("z4j.adapter.dramatiq.actions.dlq")
 
 
 async def requeue_dead_letter_action(
