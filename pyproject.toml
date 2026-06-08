@@ -1,9 +1,9 @@
 [project]
 name = "z4j-dramatiq"
-version = "1.6.0"
+version = "1.6.7"
 description = "z4j Dramatiq queue engine adapter (Apache 2.0)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "z4j contributors" }]
 keywords = ["z4j", "dramatiq", "task", "queue", "redis", "rabbitmq"]
@@ -13,6 +13,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -22,7 +23,14 @@ classifiers = [
 ]
 dependencies = [
     "z4j-core>=1.4.0,<2",
-    "dramatiq>=2.1.0",
+    # Dramatiq compatibility policy: operator-chosen primary, wide
+    # range. Audit-only adapter; all imports are deferred and target
+    # the long-stable get_broker / Message / Middleware / Abortable
+    # surface. Abortable existed in 1.13+; broker.flush() / queue
+    # counts shape stable since 1.14. The previous >=2.1.0 floor
+    # excluded the Dramatiq 1.15 / 1.16 deployed majority for no
+    # functional reason. ``<3`` guards a future 3.0 break.
+    "dramatiq>=1.14,<3",
 ]
 
 [project.optional-dependencies]
@@ -34,8 +42,10 @@ dependencies = [
 # version ranges rather than duplicating them here, because other
 # adapters (notably arq) cap redis differently and duplicating pins
 # blows up pip's resolver when both are installed in the same env.
-redis = ["dramatiq[redis]>=2.1.0"]
-rabbitmq = ["dramatiq[rabbitmq]>=2.1.0"]
+# Relaxed to the same 1.14 floor as the base dep; broker extras
+# stay in lockstep with the parent dramatiq pin.
+redis = ["dramatiq[redis]>=1.14,<3"]
+rabbitmq = ["dramatiq[rabbitmq]>=1.14,<3"]
 
 [project.scripts]
 # 1.1.2+ console script. Both ``z4j-dramatiq`` (pip-installed entry

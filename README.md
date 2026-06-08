@@ -1,8 +1,8 @@
 # z4j-dramatiq
 
-[![PyPI version](https://img.shields.io/pypi/v/z4j-dramatiq.svg?v=1.4.0)](https://pypi.org/project/z4j-dramatiq/)
-[![Python](https://img.shields.io/pypi/pyversions/z4j-dramatiq.svg?v=1.4.0)](https://pypi.org/project/z4j-dramatiq/)
-[![License](https://img.shields.io/pypi/l/z4j-dramatiq.svg?v=1.4.0)](https://github.com/z4jdev/z4j-dramatiq/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/z4j-dramatiq.svg?v=1.6.7)](https://pypi.org/project/z4j-dramatiq/)
+[![Python](https://img.shields.io/pypi/pyversions/z4j-dramatiq.svg?v=1.6.7)](https://pypi.org/project/z4j-dramatiq/)
+[![License](https://img.shields.io/pypi/l/z4j-dramatiq.svg?v=1.6.7)](https://github.com/z4jdev/z4j-dramatiq/blob/main/LICENSE)
 
 The Dramatiq engine adapter for [z4j](https://z4j.com).
 
@@ -10,6 +10,13 @@ Streams every Dramatiq actor lifecycle event from your workers to the
 z4j and accepts operator control actions from the dashboard.
 Dramatiq has no upstream scheduler, so for periodic schedules pair with
 [`z4j-scheduler`](https://github.com/z4jdev/z4j-scheduler).
+
+## Compatibility
+
+- Dramatiq 1.14+ and <3 (capped below the eventual Dramatiq 3 breaking-major)
+- Python 3.10+
+
+Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
 
 ## What it ships
 

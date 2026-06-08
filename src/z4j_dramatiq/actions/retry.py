@@ -6,8 +6,22 @@ the actor name + queue + (redacted) args reference, so we can
 reconstruct + re-enqueue from the snapshot the brain holds.
 
 The adapter accepts the snapshot via the ``override_args`` /
-``override_kwargs`` parameters when the original is no longer
-available; otherwise it re-uses whatever the broker still has.
+``override_kwargs`` parameters; when the brain does not supply
+them we re-send the actor with an empty payload (the broker-
+stored Message body is NEVER read or deserialized).
+
+R7 audit (H-2 / pickle-in-retry): this retry path is structurally
+immune to the H-2 pattern flagged in z4j-rq. Dramatiq's default
+MessageEncoder is JSON (``dramatiq.encoder.JSONEncoder``), not
+pickle, but more importantly we do not touch the broker-stored
+body at any point - the brain MUST supply ``actor_name`` and we
+re-enqueue via ``actor.send`` / ``actor.send_with_options`` using
+brain-supplied arguments only. An attacker who can write to the
+broker cannot trigger deserialization inside the agent through
+this surface. See also ``z4j_dramatiq.events.mapper`` (args/kwargs
+dropped at the boundary) and ``z4j_dramatiq.actions.dlq``
+(``actor_name`` required; native path uses Dramatiq's own
+``DeadLetter.resurrect`` which republishes raw bytes server-side).
 """
 
 from __future__ import annotations

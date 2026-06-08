@@ -183,3 +183,101 @@ class TestCapabilitiesDoNotLie:
             method = method_for.get(cap)
             assert method, f"capability {cap!r} has no documented method binding"
             assert callable(getattr(adapter, method))
+
+
+# ---------------------------------------------------------------------------
+# T8 - R7 H-2 regression: retry path NEVER reads broker-stored message body
+# ---------------------------------------------------------------------------
+
+
+class TestRetryDoesNotReadBrokerStoredMessageBody:
+    """R7 audit finding H-2 (pickle-in-retry) regression guard.
+
+    Dramatiq's default MessageEncoder is JSON, not pickle, but an
+    operator may swap in any encoder (including pickle). The retry
+    surface must NEVER read the broker-stored Message body - it
+    must rely solely on brain-supplied actor_name + override
+    args/kwargs - regardless of which encoder is in play. This
+    test asserts the structural invariant by spying on every
+    likely message-fetch entry point on the broker.
+    """
+
+    @pytest.mark.asyncio
+    async def test_retry_does_not_call_any_broker_message_fetch(
+        self, broker, monkeypatch,
+    ):
+        from z4j_dramatiq.actions.retry import retry_task_action
+
+        fetch_calls: list[str] = []
+
+        # Add spies on every broker method that could plausibly
+        # return a stored Message. If retry_task_action calls any
+        # of them, the test fails - that would mean the retry path
+        # is one bug away from triggering pickle/JSON deserialization
+        # of attacker-controlled payload.
+        for suspect in (
+            "get_message",
+            "fetch_message",
+            "peek_message",
+            "consume",
+            "get_dead_letter",
+        ):
+            def _make_spy(name: str) -> Any:
+                def _spy(*_a: Any, **_kw: Any) -> Any:
+                    fetch_calls.append(name)
+                    raise AssertionError(
+                        f"retry called broker.{name}() - "
+                        "H-2 regression",
+                    )
+                return _spy
+            monkeypatch.setattr(broker, suspect, _make_spy(suspect),
+                                raising=False)
+
+        result = await retry_task_action(
+            broker,
+            task_id="msg-1",
+            actor_name="myapp.tasks.send_email",
+            override_args=("safe",),
+            override_kwargs={"to": "ops@example.com"},
+        )
+
+        assert result.status == "success"
+        assert fetch_calls == [], (
+            f"retry must not touch broker-stored bodies; "
+            f"called: {fetch_calls}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_retry_refuses_without_actor_name(self, broker):
+        """Without a brain-supplied actor_name we cannot reconstruct
+        the target. We must fail loudly rather than scan the broker
+        for the message and infer the actor from the stored body.
+        """
+        from z4j_dramatiq.actions.retry import retry_task_action
+        result = await retry_task_action(broker, task_id="msg-1")
+        assert result.status == "failed"
+        assert "actor_name" in result.error
+
+    @pytest.mark.asyncio
+    async def test_dlq_requeue_refuses_without_actor_name(self, broker):
+        """Same invariant for the DLQ resurrection path."""
+        from z4j_dramatiq.actions.dlq import requeue_dead_letter_action
+        result = await requeue_dead_letter_action(broker, task_id="msg-1")
+        assert result.status == "failed"
+        assert "actor_name" in result.error
+
+    @pytest.mark.asyncio
+    async def test_bulk_retry_skips_ids_without_actor_mapping(self, broker):
+        """The bulk path also refuses to guess - missing actor in the
+        brain-supplied mapping yields a ``skipped`` count, not a
+        broker-side lookup.
+        """
+        from z4j_dramatiq.actions.bulk_retry import bulk_retry_action
+        result = await bulk_retry_action(
+            broker,
+            filter={"task_ids": ["msg-1", "msg-2"], "actors": {}},
+            max=10,
+        )
+        assert result.status == "success"
+        assert result.result["retried"] == 0
+        assert result.result["skipped"] == 2
