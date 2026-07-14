@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from z4j_core.errors import NotFoundError
 from z4j_core.models import (
     CommandResult,
     DiscoveryHints,
@@ -90,7 +90,7 @@ class DramatiqEngineAdapter:
         try:
             self.broker.add_middleware(self._middleware)
             logger.info("z4j dramatiq: middleware installed on broker")
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "z4j dramatiq: broker.add_middleware raised - capture inactive",
             )
@@ -101,10 +101,8 @@ class DramatiqEngineAdapter:
             return
         middleware = getattr(self.broker, "middleware", None)
         if isinstance(middleware, list):
-            try:
+            with contextlib.suppress(ValueError):
                 middleware.remove(self._middleware)
-            except ValueError:
-                pass
         self._middleware = None
         self._loop = None
 
@@ -118,8 +116,7 @@ class DramatiqEngineAdapter:
                 try:
                     dropped = self._event_queue.get_nowait()
                     logger.warning(
-                        "z4j dramatiq: event queue full, dropped event "
-                        "kind=%s",
+                        "z4j dramatiq: event queue full, dropped event kind=%s",
                         getattr(dropped, "kind", "?"),
                     )
                 except asyncio.QueueEmpty:
@@ -135,7 +132,7 @@ class DramatiqEngineAdapter:
 
     async def discover_tasks(
         self,
-        hints: DiscoveryHints | None = None,  # noqa: ARG002
+        hints: DiscoveryHints | None = None,
     ) -> list[TaskDefinition]:
         return discover_runtime(self.broker)
 
@@ -200,20 +197,17 @@ class DramatiqEngineAdapter:
                     "exception": "Results backend not configured",
                 },
             )
-        # Dramatiq's Results backend keys by message_id. We don't
-        # have the queue/actor context here (brain would pass it in
-        # via the command payload in a v1.1 enhancement). For v1 we
-        # surface "unknown" honestly rather than guess.
+        # Dramatiq's Results backend keys by message_id and we don't
+        # have the queue/actor context here, so we surface "unknown"
+        # honestly rather than guess. The brain's snapshot stays
+        # authoritative.
         return CommandResult(
             status="success",
             result={
                 "task_id": task_id,
                 "engine_state": "unknown",
                 "finished_at": None,
-                "exception": (
-                    "Dramatiq reconcile requires actor/queue context "
-                    "(v1.1 enhancement)"
-                ),
+                "exception": ("Dramatiq reconcile requires actor/queue context"),
             },
         )
 
@@ -237,10 +231,10 @@ class DramatiqEngineAdapter:
                         counts = fn(q_name)
                         if isinstance(counts, (tuple, list)) and counts:
                             health["queue_depths"][q_name] = int(counts[0] or 0)
-                    except Exception:  # noqa: BLE001
+                    except Exception:  # noqa: S110  best-effort queue depth
                         pass
             health["broker_connected"] = True
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             health["broker_error"] = str(exc)[:200]
         return health
 
@@ -255,8 +249,8 @@ class DramatiqEngineAdapter:
         args: tuple[Any, ...] = (),
         kwargs: dict[str, Any] | None = None,
         queue: str | None = None,
-        eta: float | None = None,  # noqa: ARG002
-        priority: int | None = None,  # noqa: ARG002
+        eta: float | None = None,
+        priority: int | None = None,
     ) -> CommandResult:
         """Universal enqueue - sends a Dramatiq message via the
         registered actor's ``send_with_options`` if the actor is
@@ -269,14 +263,16 @@ class DramatiqEngineAdapter:
             actor = None
             try:
                 actor = dramatiq.get_broker().get_actor(name)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 actor = None
             if actor is not None:
                 opts: dict[str, Any] = {}
                 if queue:
                     opts["queue_name"] = queue
                 msg = actor.send_with_options(
-                    args=tuple(args), kwargs=kwargs or {}, **opts,
+                    args=tuple(args),
+                    kwargs=kwargs or {},
+                    **opts,
                 )
                 new_id = getattr(msg, "message_id", None)
             else:
@@ -294,7 +290,7 @@ class DramatiqEngineAdapter:
                 )
                 self.broker.enqueue(msg)
                 new_id = msg.message_id
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return CommandResult(status="failed", error=str(exc))
         return CommandResult(
             status="success",
@@ -315,11 +311,13 @@ class DramatiqEngineAdapter:
             task_id=task_id,
             actor_name=(
                 (override_kwargs or {}).pop("__z4j_actor_name__", None)
-                if override_kwargs is not None else None
+                if override_kwargs is not None
+                else None
             ),
             queue_name=(
                 (override_kwargs or {}).pop("__z4j_queue_name__", None)
-                if override_kwargs is not None else None
+                if override_kwargs is not None
+                else None
             ),
             override_args=override_args,
             override_kwargs=override_kwargs,
@@ -370,7 +368,7 @@ class DramatiqEngineAdapter:
             task_id=task_id,
         )
 
-    async def rate_limit(  # noqa: ARG002
+    async def rate_limit(
         self,
         task_name: str,
         rate: str,
@@ -380,13 +378,13 @@ class DramatiqEngineAdapter:
         return CommandResult(
             status="failed",
             error=(
-                "rate_limit is not implemented for the Dramatiq engine "
-                "in this release. Dramatiq has the Throttler middleware "
-                "- UI wiring lands in v1.1. See docs/MULTI_ENGINE_PLAN.md §5."
+                "rate_limit is not implemented for the Dramatiq engine. "
+                "Use Dramatiq's own Throttler middleware to rate-limit "
+                "actors in your worker configuration."
             ),
         )
 
-    async def restart_worker(self, worker_id: str) -> CommandResult:  # noqa: ARG002
+    async def restart_worker(self, worker_id: str) -> CommandResult:
         return CommandResult(
             status="failed",
             error=(
@@ -403,8 +401,7 @@ class DramatiqEngineAdapter:
 
     def capabilities(self) -> set[str]:
         return set(
-            ABORTABLE_CAPABILITIES if _has_abortable(self.broker)
-            else DEFAULT_CAPABILITIES,
+            ABORTABLE_CAPABILITIES if _has_abortable(self.broker) else DEFAULT_CAPABILITIES,
         )
 
 
@@ -430,15 +427,15 @@ def _has_abortable(broker: Any) -> bool:
     if not middleware:
         return False
     try:
-        from dramatiq.middleware import (  # type: ignore[import-not-found]
+        # Abortable ships in the separate dramatiq-abort package,
+        # not dramatiq itself.
+        from dramatiq_abort import (  # type: ignore[import-not-found]
             Abortable,
         )
     except ImportError:
-        # Without dramatiq the user can't have Abortable either; fall
-        # back to a structural check on the class name.
-        return any(
-            type(mw).__name__ == "Abortable" for mw in middleware
-        )
+        # dramatiq-abort not installed; fall back to a structural
+        # check on the class name.
+        return any(type(mw).__name__ == "Abortable" for mw in middleware)
     return any(isinstance(mw, Abortable) for mw in middleware)
 
 

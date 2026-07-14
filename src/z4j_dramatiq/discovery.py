@@ -30,7 +30,7 @@ def discover_runtime(broker: Any) -> list[TaskDefinition]:
     out: list[TaskDefinition] = []
     try:
         items = list(actors.items())
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
     for name, actor in items:
@@ -45,10 +45,11 @@ def discover_runtime(broker: Any) -> list[TaskDefinition]:
                     module=module,
                 ),
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             # Single bad actor must not block discovery of the rest.
             logger.exception(
-                "z4j dramatiq: discovery failed for actor %r", name,
+                "z4j dramatiq: discovery failed for actor %r",
+                name,
             )
     return out
 
@@ -58,7 +59,7 @@ def _safe_str(value: Any) -> str:
         return ""
     try:
         return str(value)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
 
 

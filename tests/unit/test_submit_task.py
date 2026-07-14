@@ -16,10 +16,9 @@ from typing import Any
 
 import dramatiq
 import pytest
-
 from z4j_dramatiq.engine import DramatiqEngineAdapter
 
-from tests.unit.conftest import FakeActor, FakeBroker
+from tests.unit.conftest import FakeBroker
 
 
 @pytest.fixture
@@ -48,7 +47,8 @@ class TestSubmitTask:
         assert "submit_task" in adapter.capabilities()
 
     async def test_registered_actor_uses_send_with_options(
-        self, adapter_with_global_broker,
+        self,
+        adapter_with_global_broker,
     ) -> None:
         """If the actor is registered with the global broker, the
         adapter prefers ``actor.send_with_options`` so the routing
@@ -72,7 +72,8 @@ class TestSubmitTask:
         assert actor.sent[0]["kwargs"] == {"template": "welcome"}
 
     async def test_queue_kwarg_overrides_actor_default(
-        self, adapter_with_global_broker,
+        self,
+        adapter_with_global_broker,
     ) -> None:
         adapter, broker = adapter_with_global_broker
         actor = broker.actors["myapp.tasks.send_email"]
@@ -86,7 +87,8 @@ class TestSubmitTask:
         assert actor.sent[-1]["queue_name"] == "high-priority"
 
     async def test_unregistered_actor_uses_message_fallback(
-        self, broker: FakeBroker,
+        self,
+        broker: FakeBroker,
     ) -> None:
         """If the actor isn't in the global broker (cross-process
         case), the adapter constructs a raw dramatiq.Message and
@@ -124,10 +126,11 @@ class TestSubmitTask:
         assert msg.kwargs == {"factor": 10}
 
     async def test_broker_exception_returns_failed_result(
-        self, broker: FakeBroker,
+        self,
+        broker: FakeBroker,
     ) -> None:
         class ExplodingBroker(FakeBroker):
-            def enqueue(self_inner, msg) -> None:  # noqa: ARG002, N805
+            def enqueue(self_inner, msg) -> None:  # noqa: N805
                 raise RuntimeError("rabbitmq down")
 
         exp_broker = ExplodingBroker()

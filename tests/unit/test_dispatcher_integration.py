@@ -7,11 +7,9 @@ from pathlib import Path
 
 import dramatiq
 import pytest
-
 from z4j_bare.buffer import BufferStore
 from z4j_bare.dispatcher import CommandDispatcher
 from z4j_core.transport.frames import CommandFrame, CommandPayload
-
 from z4j_dramatiq.engine import DramatiqEngineAdapter
 
 from tests.unit.conftest import FakeBroker
@@ -26,7 +24,8 @@ def buf(tmp_path: Path) -> BufferStore:
 
 @pytest.mark.asyncio
 async def test_schedule_fire_end_to_end_through_dispatcher(
-    broker: FakeBroker, buf: BufferStore,
+    broker: FakeBroker,
+    buf: BufferStore,
 ) -> None:
     saved = dramatiq.broker.global_broker
     dramatiq.broker.global_broker = broker

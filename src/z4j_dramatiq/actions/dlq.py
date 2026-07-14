@@ -54,8 +54,7 @@ async def requeue_dead_letter_action(
             ),
         )
 
-    dlq_result = _try_native_dlq(broker, task_id=task_id,
-                                 actor_name=actor_name)
+    dlq_result = _try_native_dlq(broker, task_id=task_id, actor_name=actor_name)
     if dlq_result is not None:
         return dlq_result
 
@@ -78,7 +77,10 @@ async def requeue_dead_letter_action(
 
 
 def _try_native_dlq(
-    broker: Any, *, task_id: str, actor_name: str,
+    broker: Any,
+    *,
+    task_id: str,
+    actor_name: str,
 ) -> CommandResult | None:
     """Best-effort native DLQ-aware path.
 
@@ -93,9 +95,10 @@ def _try_native_dlq(
         return None
     try:
         dead_letters = fetcher(task_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(
-            "z4j dramatiq: get_dead_letter raised - falling back: %s", exc,
+            "z4j dramatiq: get_dead_letter raised - falling back: %s",
+            exc,
         )
         return None
     if not dead_letters:
@@ -118,7 +121,7 @@ def _try_native_dlq(
                             "source": "dlq",
                         },
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     return CommandResult(
                         status="failed",
                         error=f"DeadLetter.resurrect failed: {exc}",

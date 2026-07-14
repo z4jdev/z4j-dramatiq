@@ -10,19 +10,22 @@ from z4j_dramatiq.capabilities import (
 
 def test_default_set_frozen():
     # v2026.5 GA set - see docs/MULTI_ENGINE_PLAN.md §5.
-    assert DEFAULT_CAPABILITIES == frozenset(
-        {
-            "submit_task",
-            "retry_task",
-            "purge_queue",
-            "bulk_retry",
-            "requeue_dead_letter",
-        },
+    assert (
+        frozenset(
+            {
+                "submit_task",
+                "retry_task",
+                "purge_queue",
+                "bulk_retry",
+                "requeue_dead_letter",
+            },
+        )
+        == DEFAULT_CAPABILITIES
     )
 
 
 def test_abortable_set_includes_default_plus_cancel():
-    assert ABORTABLE_CAPABILITIES == DEFAULT_CAPABILITIES | {"cancel_task"}
+    assert DEFAULT_CAPABILITIES | {"cancel_task"} == ABORTABLE_CAPABILITIES
 
 
 def test_no_remote_control_in_either_set():

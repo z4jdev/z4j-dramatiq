@@ -9,13 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from z4j_core.models import EventKind
 from z4j_core.redaction.engine import RedactionEngine
-
 from z4j_dramatiq.events.mapper import build_event
 from z4j_dramatiq.events.middleware import Z4JMiddleware
-
 
 # ---------------------------------------------------------------------------
 # T1 - mapper never forwards args/kwargs (no-pickle / no-leak rule)
@@ -71,7 +68,10 @@ class TestExceptionPayloadBounded:
 
 class TestMiddlewareIsBoundary:
     def test_emit_swallows_internal_exception(
-        self, message, broker, monkeypatch,
+        self,
+        message,
+        broker,
+        monkeypatch,
     ):
         from z4j_dramatiq.events import middleware as mw_mod
 
@@ -81,7 +81,7 @@ class TestMiddlewareIsBoundary:
         monkeypatch.setattr(mw_mod, "build_event", _boom)
         sink_called: list[Any] = []
         mw = Z4JMiddleware(
-            sink=lambda ev: sink_called.append(ev),
+            sink=sink_called.append,
             redaction=RedactionEngine(),
         )
         # All four hook entry points must NOT raise.
@@ -101,11 +101,13 @@ class TestMiddlewareIsBoundary:
 class TestCapabilitiesHonestAboutAbortable:
     def test_no_cancel_without_abortable(self, broker):
         from z4j_dramatiq.engine import DramatiqEngineAdapter
+
         adapter = DramatiqEngineAdapter(broker=broker)
         assert "cancel_task" not in adapter.capabilities()
 
     def test_cancel_appears_with_abortable(self, broker_with_abortable):
         from z4j_dramatiq.engine import DramatiqEngineAdapter
+
         adapter = DramatiqEngineAdapter(broker=broker_with_abortable)
         assert "cancel_task" in adapter.capabilities()
 
@@ -114,6 +116,7 @@ class TestCapabilitiesHonestAboutAbortable:
         """Even if a brain ignores capabilities and dispatches cancel,
         the action must fail loudly rather than silently no-op."""
         from z4j_dramatiq.actions.cancel import cancel_task_action
+
         result = await cancel_task_action(broker, task_id="any-id")
         assert result.status == "failed"
         assert "Abortable" in result.error
@@ -128,16 +131,22 @@ class TestPurgeTokenIsAuthoritative:
     @pytest.mark.asyncio
     async def test_empty_string_token_rejected(self, broker):
         from z4j_dramatiq.actions.purge import purge_queue_action
+
         result = await purge_queue_action(
-            broker, queue_name="default", confirm_token="",
+            broker,
+            queue_name="default",
+            confirm_token="",
         )
         assert result.status == "failed"
 
     @pytest.mark.asyncio
     async def test_garbage_token_rejected(self, broker):
         from z4j_dramatiq.actions.purge import purge_queue_action
+
         result = await purge_queue_action(
-            broker, queue_name="default", confirm_token="0" * 64,
+            broker,
+            queue_name="default",
+            confirm_token="0" * 64,
         )
         assert result.status == "failed"
 
@@ -150,16 +159,14 @@ class TestPurgeTokenIsAuthoritative:
 class TestEngineLifecycleChurn:
     def test_repeated_connect_disconnect_is_safe(self, broker):
         from z4j_dramatiq.engine import DramatiqEngineAdapter
+
         adapter = DramatiqEngineAdapter(broker=broker)
         for _ in range(5):
             adapter.connect_signals()
             adapter.disconnect_signals()
         assert adapter._middleware is None
         # Middleware list on the broker should be empty after teardown.
-        assert all(
-            "Z4J" not in type(mw).__name__
-            for mw in (broker.middleware or [])
-        )
+        assert all("Z4J" not in type(mw).__name__ for mw in (broker.middleware or []))
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +177,7 @@ class TestEngineLifecycleChurn:
 class TestCapabilitiesDoNotLie:
     def test_every_advertised_capability_has_method(self, broker_with_abortable):
         from z4j_dramatiq.engine import DramatiqEngineAdapter
+
         adapter = DramatiqEngineAdapter(broker=broker_with_abortable)
         method_for = {
             "submit_task": "submit_task",
@@ -204,7 +212,9 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
 
     @pytest.mark.asyncio
     async def test_retry_does_not_call_any_broker_message_fetch(
-        self, broker, monkeypatch,
+        self,
+        broker,
+        monkeypatch,
     ):
         from z4j_dramatiq.actions.retry import retry_task_action
 
@@ -222,16 +232,17 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
             "consume",
             "get_dead_letter",
         ):
+
             def _make_spy(name: str) -> Any:
                 def _spy(*_a: Any, **_kw: Any) -> Any:
                     fetch_calls.append(name)
                     raise AssertionError(
-                        f"retry called broker.{name}() - "
-                        "H-2 regression",
+                        f"retry called broker.{name}() - H-2 regression",
                     )
+
                 return _spy
-            monkeypatch.setattr(broker, suspect, _make_spy(suspect),
-                                raising=False)
+
+            monkeypatch.setattr(broker, suspect, _make_spy(suspect), raising=False)
 
         result = await retry_task_action(
             broker,
@@ -243,8 +254,7 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
 
         assert result.status == "success"
         assert fetch_calls == [], (
-            f"retry must not touch broker-stored bodies; "
-            f"called: {fetch_calls}"
+            f"retry must not touch broker-stored bodies; called: {fetch_calls}"
         )
 
     @pytest.mark.asyncio
@@ -254,6 +264,7 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
         for the message and infer the actor from the stored body.
         """
         from z4j_dramatiq.actions.retry import retry_task_action
+
         result = await retry_task_action(broker, task_id="msg-1")
         assert result.status == "failed"
         assert "actor_name" in result.error
@@ -262,6 +273,7 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
     async def test_dlq_requeue_refuses_without_actor_name(self, broker):
         """Same invariant for the DLQ resurrection path."""
         from z4j_dramatiq.actions.dlq import requeue_dead_letter_action
+
         result = await requeue_dead_letter_action(broker, task_id="msg-1")
         assert result.status == "failed"
         assert "actor_name" in result.error
@@ -273,6 +285,7 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
         broker-side lookup.
         """
         from z4j_dramatiq.actions.bulk_retry import bulk_retry_action
+
         result = await bulk_retry_action(
             broker,
             filter={"task_ids": ["msg-1", "msg-2"], "actors": {}},

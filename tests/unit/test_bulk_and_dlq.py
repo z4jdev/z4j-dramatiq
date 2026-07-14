@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from z4j_dramatiq.actions.bulk_retry import bulk_retry_action
 from z4j_dramatiq.actions.dlq import requeue_dead_letter_action
 
@@ -75,6 +74,7 @@ class TestDlqRequeue:
         # The FakeBroker has no ``get_dead_letter`` method - the
         # action falls back to generic retry.
         from z4j_dramatiq.actions.dlq import requeue_dead_letter_action
+
         result = await requeue_dead_letter_action(
             broker,
             task_id="msg-1",
@@ -87,7 +87,8 @@ class TestDlqRequeue:
     @pytest.mark.asyncio
     async def test_missing_actor_name_fails_loudly(self, broker):
         result = await requeue_dead_letter_action(
-            broker, task_id="msg-1",
+            broker,
+            task_id="msg-1",
         )
         assert result.status == "failed"
         assert "actor_name" in result.error
@@ -96,5 +97,6 @@ class TestDlqRequeue:
 class TestCapabilityPromotion:
     def test_bulk_retry_and_dlq_in_default(self):
         from z4j_dramatiq.capabilities import DEFAULT_CAPABILITIES
+
         assert "bulk_retry" in DEFAULT_CAPABILITIES
         assert "requeue_dead_letter" in DEFAULT_CAPABILITIES

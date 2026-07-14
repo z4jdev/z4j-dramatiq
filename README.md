@@ -1,8 +1,8 @@
 # z4j-dramatiq
 
-[![PyPI version](https://img.shields.io/pypi/v/z4j-dramatiq.svg?v=1.6.7)](https://pypi.org/project/z4j-dramatiq/)
-[![Python](https://img.shields.io/pypi/pyversions/z4j-dramatiq.svg?v=1.6.7)](https://pypi.org/project/z4j-dramatiq/)
-[![License](https://img.shields.io/pypi/l/z4j-dramatiq.svg?v=1.6.7)](https://github.com/z4jdev/z4j-dramatiq/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/z4j-dramatiq.svg?v=1.7.0)](https://pypi.org/project/z4j-dramatiq/)
+[![Python](https://img.shields.io/pypi/pyversions/z4j-dramatiq.svg?v=1.7.0)](https://pypi.org/project/z4j-dramatiq/)
+[![License](https://img.shields.io/pypi/l/z4j-dramatiq.svg?v=1.7.0)](https://github.com/z4jdev/z4j-dramatiq/blob/main/LICENSE)
 
 The Dramatiq engine adapter for [z4j](https://z4j.com).
 
@@ -14,7 +14,7 @@ Dramatiq has no upstream scheduler, so for periodic schedules pair with
 ## Compatibility
 
 - Dramatiq 1.14+ and <3 (capped below the eventual Dramatiq 3 breaking-major)
-- Python 3.10+
+- Python 3.11+
 
 Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
 
@@ -22,12 +22,12 @@ Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
 
 | Capability | Notes |
 |---|---|
-| Message lifecycle events | enqueued, started, succeeded, failed, retried, skipped |
-| Actor discovery | runtime registry merge + static scan |
+| Message lifecycle events | enqueued, started, succeeded, failed |
+| Actor discovery | Dramatiq's runtime broker registry |
 | Submit / retry / cancel | direct against the Dramatiq broker |
 | Bulk retry | filter-driven; re-enqueues matching messages |
 | Purge queue | with confirm-token guard |
-| Reconcile task | via Redis / RabbitMQ broker introspection |
+| Reconcile task | reports honest `unknown` (Dramatiq has no queryable-by-id result store); the brain's event-derived state stays authoritative |
 
 Captured via Dramatiq's middleware hook system, your existing actors
 do not need to be decorated or modified.

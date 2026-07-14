@@ -5,10 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from z4j_core.models import Event, EventKind
 from z4j_core.redaction.engine import RedactionEngine
-
 from z4j_dramatiq.events.middleware import Z4JMiddleware
 
 
@@ -41,16 +39,26 @@ class TestEventEmission:
         assert sink.events[-1].kind == EventKind.TASK_STARTED
 
     def test_after_process_emits_succeeded_when_no_exc(
-        self, middleware, sink, message, broker,
+        self,
+        middleware,
+        sink,
+        message,
+        broker,
     ):
         middleware.after_process_message(broker, message, exception=None)
         assert sink.events[-1].kind == EventKind.TASK_SUCCEEDED
 
     def test_after_process_emits_failed_when_exc(
-        self, middleware, sink, message, broker,
+        self,
+        middleware,
+        sink,
+        message,
+        broker,
     ):
         middleware.after_process_message(
-            broker, message, exception=RuntimeError("kaboom"),
+            broker,
+            message,
+            exception=RuntimeError("kaboom"),
         )
         ev = sink.events[-1]
         assert ev.kind == EventKind.TASK_FAILED
@@ -61,7 +69,11 @@ class TestBoundarySafety:
     """A bug in z4j must NEVER raise into Dramatiq's middleware chain."""
 
     def test_emit_swallows_internal_exception(
-        self, sink, message, broker, monkeypatch,
+        self,
+        sink,
+        message,
+        broker,
+        monkeypatch,
     ):
         # Force build_event to raise - simulates an internal bug.
         from z4j_dramatiq.events import middleware as mw_mod
@@ -84,9 +96,13 @@ class TestArgsKwargsNeverLeak:
     """SECURITY: raw args/kwargs must NEVER appear in emitted events."""
 
     def test_kwargs_secret_does_not_leak(
-        self, middleware, sink, broker,
+        self,
+        middleware,
+        sink,
+        broker,
     ):
         from tests.unit.conftest import FakeMessage  # local fake
+
         msg = FakeMessage(
             message_id="msg-secret",
             kwargs={"api_key": "sk_live_NEVER_LEAK"},

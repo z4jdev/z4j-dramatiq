@@ -38,19 +38,27 @@ async def cancel_task_action(
             ),
         )
 
+    # B15: dramatiq's abort lives in the SEPARATE ``dramatiq-abort``
+    # package -- core ``dramatiq.middleware`` has no ``Abortable`` in modern
+    # dramatiq (the old import here ALWAYS ImportError'd on dramatiq>=2, so
+    # cancel was advertised by the engine's structural gate yet always
+    # failed). Its middleware class is named ``Abortable`` (what the gate
+    # detects) and the abort is a module-level ``abort(message_id)``.
     try:
-        from dramatiq.middleware import (  # type: ignore[import-not-found]
-            Abortable,
-        )
+        from dramatiq_abort import abort  # type: ignore[import-not-found]
     except ImportError:
         return CommandResult(
             status="failed",
-            error="dramatiq.middleware.Abortable not importable",
+            error=(
+                "cancel_task requires the `dramatiq-abort` package. Install "
+                "z4j-dramatiq[abort] (or `pip install dramatiq-abort`) and add "
+                "its Abortable middleware to your broker."
+            ),
         )
 
     try:
-        Abortable.abort(task_id)
-    except Exception as exc:  # noqa: BLE001
+        abort(task_id)
+    except Exception as exc:
         return CommandResult(status="failed", error=f"cancel failed: {exc}")
 
     return CommandResult(
@@ -64,17 +72,17 @@ async def cancel_task_action(
 
 
 def _broker_has_abortable(broker: Any) -> bool:
-    """True iff the user has ``Abortable`` in their middleware chain."""
+    """True iff an ``Abortable`` middleware is in the broker's chain.
+
+    Structural (class-name) check -- matches the engine's capability gate
+    and the ``dramatiq-abort`` package's middleware, whose class is named
+    ``Abortable`` (core ``dramatiq.middleware`` has none in modern
+    versions, so an ``isinstance`` import check would always be False).
+    """
     middleware = getattr(broker, "middleware", None)
     if not middleware:
         return False
-    try:
-        from dramatiq.middleware import (  # type: ignore[import-not-found]
-            Abortable,
-        )
-    except ImportError:
-        return False
-    return any(isinstance(mw, Abortable) for mw in middleware)
+    return any(type(mw).__name__ == "Abortable" for mw in middleware)
 
 
 __all__ = ["cancel_task_action"]

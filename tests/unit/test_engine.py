@@ -6,9 +6,7 @@ import asyncio
 import inspect
 
 import pytest
-
 from z4j_core.protocols import QueueEngineAdapter
-
 from z4j_dramatiq.capabilities import (
     ABORTABLE_CAPABILITIES,
     DEFAULT_CAPABILITIES,
@@ -75,9 +73,16 @@ class TestAsyncMethodShape:
     @pytest.mark.parametrize(
         "method_name",
         [
-            "discover_tasks", "list_queues", "list_workers", "get_task",
-            "retry_task", "cancel_task", "purge_queue",
-            "bulk_retry", "requeue_dead_letter", "rate_limit",
+            "discover_tasks",
+            "list_queues",
+            "list_workers",
+            "get_task",
+            "retry_task",
+            "cancel_task",
+            "purge_queue",
+            "bulk_retry",
+            "requeue_dead_letter",
+            "rate_limit",
             "restart_worker",
         ],
     )
@@ -86,7 +91,8 @@ class TestAsyncMethodShape:
         assert inspect.iscoroutinefunction(getattr(adapter, method_name))
 
     @pytest.mark.parametrize(
-        "method_name", ["subscribe_events", "subscribe_registry_changes"],
+        "method_name",
+        ["subscribe_events", "subscribe_registry_changes"],
     )
     def test_subscribe_methods_are_async_generators(self, broker, method_name):
         adapter = DramatiqEngineAdapter(broker=broker)

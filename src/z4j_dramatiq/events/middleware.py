@@ -55,6 +55,7 @@ def _resolve_base() -> type:
         # will get a clear ImportError when they construct it.
         class _StubBase:
             pass
+
         return _StubBase
     return Middleware
 
@@ -91,30 +92,27 @@ class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
 
     def after_enqueue(
         self,
-        broker: Any,  # noqa: ARG002
+        broker: Any,
         message: Any,
-        delay: int | None,  # noqa: ARG002
+        delay: int | None,
     ) -> None:
         """Message has been written to the broker - emit ``task.received``."""
         self._safe_emit(EventKind.TASK_RECEIVED, message)
 
-    def before_process_message(self, broker: Any, message: Any) -> None:  # noqa: ARG002
+    def before_process_message(self, broker: Any, message: Any) -> None:
         """Worker has fetched the message and is about to run it."""
         self._safe_emit(EventKind.TASK_STARTED, message)
 
     def after_process_message(
         self,
-        broker: Any,  # noqa: ARG002
+        broker: Any,
         message: Any,
         *,
-        result: Any = None,  # noqa: ARG002
+        result: Any = None,
         exception: BaseException | None = None,
     ) -> None:
         """Worker has finished - success or failure based on ``exception``."""
-        kind = (
-            EventKind.TASK_FAILED if exception is not None
-            else EventKind.TASK_SUCCEEDED
-        )
+        kind = EventKind.TASK_FAILED if exception is not None else EventKind.TASK_SUCCEEDED
         self._safe_emit(kind, message, exception=exception)
 
     # ------------------------------------------------------------------
@@ -138,7 +136,7 @@ class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
                 exception=exception,
             )
             sink(event)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "z4j dramatiq: middleware emit raised - dropping event "
                 "(this is a bug in z4j, NOT in your task code)",
@@ -163,7 +161,7 @@ def _resolve_actor(message: Any) -> Any | None:
         if actor_name is None:
             return None
         return broker.get_actor(actor_name)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 

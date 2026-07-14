@@ -9,10 +9,10 @@ Example::
     import dramatiq
     from z4j_dramatiq import z4j_meta
 
+
     @dramatiq.actor(queue_name="emails")
     @z4j_meta(redact_kwargs=["api_key"], tags=["billing"])
-    def send_invoice(user_id, api_key, amount):
-        ...
+    def send_invoice(user_id, api_key, amount): ...
 """
 
 from __future__ import annotations

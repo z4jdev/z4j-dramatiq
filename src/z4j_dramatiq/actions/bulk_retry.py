@@ -41,11 +41,11 @@ _YIELD_EVERY = 100
 async def bulk_retry_action(
     broker: Any,
     *,
-    filter: dict[str, Any] | None = None,
-    max: int = 1000,
+    filter: dict[str, Any] | None = None,  # noqa: A002  public bulk_retry signature
+    max: int = 1000,  # noqa: A002  public bulk_retry signature
 ) -> CommandResult:
     """Re-send up to ``max`` actor messages; returns a summary dict."""
-    filter = filter or {}
+    filter = filter or {}  # noqa: A001  public bulk_retry signature
     effective_max = min(max, _MAX_ABSOLUTE)
     capped = max > _MAX_ABSOLUTE
 

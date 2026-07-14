@@ -64,11 +64,13 @@ class FakeActor:
             args=tuple(args),
             kwargs=dict(kwargs or {}),
         )
-        self.sent.append({
-            "args": tuple(args),
-            "kwargs": dict(kwargs or {}),
-            "queue_name": actual_q,
-        })
+        self.sent.append(
+            {
+                "args": tuple(args),
+                "kwargs": dict(kwargs or {}),
+                "queue_name": actual_q,
+            }
+        )
         return msg
 
 
@@ -93,7 +95,8 @@ class FakeBroker:
         self.actors[actor.actor_name] = actor
 
     def get_queue_message_counts(
-        self, queue_name: str,
+        self,
+        queue_name: str,
     ) -> tuple[int, int, int]:
         return (self.queue_counts.get(queue_name, 0), 0, 0)
 
@@ -102,13 +105,38 @@ class FakeBroker:
         self.queue_counts[queue_name] = 0
 
 
-class Abortable:
-    """Stand-in for ``dramatiq.middleware.Abortable``.
+try:
+    # Only importable when the ``abort`` extra is present (e.g. under
+    # ``uv sync --all-extras``); absent in the minimal test env.
+    from dramatiq_abort import Abortable as _RealAbortable
+except ImportError:  # pragma: no cover - depends on installed extras
+    _RealAbortable = object  # type: ignore[assignment, misc]
 
-    Named to match the real class so the engine's structural-fallback
-    detection (``type(mw).__name__ == "Abortable"``) finds it even
-    when ``dramatiq`` itself isn't importable in the test env.
+
+class Abortable(_RealAbortable):  # type: ignore[valid-type, misc]
+    """Stand-in for the ``Abortable`` middleware.
+
+    The adapter's ``_has_abortable`` detection has two modes and this
+    fake must satisfy whichever is active:
+
+    - ``dramatiq-abort`` NOT installed: a structural fallback
+      (``type(mw).__name__ == "Abortable"``) matches this class by
+      name (it subclasses ``object`` in that env).
+    - ``dramatiq-abort`` installed: a strict
+      ``isinstance(mw, dramatiq_abort.Abortable)`` check. Subclassing
+      the real ``Abortable`` here keeps this fake passing that check
+      too, so the detection logic is exercised correctly either way.
+
+    ``__init__`` is a deliberate no-op: the real
+    ``dramatiq_abort.Abortable`` requires an event-backend argument
+    the fake has no use for, and detection only ever inspects the
+    type, never runs abort logic against the instance.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Do NOT chain to super().__init__(): the real Abortable needs
+        # a backend and performs setup this fake middleware never uses.
+        pass
 
 
 @pytest.fixture

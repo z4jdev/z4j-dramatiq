@@ -62,7 +62,8 @@ def build_event(
     if exception is not None:
         exc_summary = f"{type(exception).__name__}: {exception}"
         payload["exception"] = _safe_truncate(
-            _safe_str(exc_summary), _MAX_EXC_SUMMARY_BYTES,
+            _safe_str(exc_summary),
+            _MAX_EXC_SUMMARY_BYTES,
         )
 
     if extra:
@@ -92,14 +93,14 @@ def build_event(
 def _worker_identity() -> str:
     """Stable ``hostname@pid`` identity for the current worker process.
 
-    Dramatiq runs N worker processes × T threads per process; each
+    Dramatiq runs N worker processes x T threads per process; each
     process has a distinct PID and therefore a distinct identity.
     Threads inside a process share the identity, which matches the
     "worker process" abstraction the brain's Workers page shows.
     """
     try:
         host = socket.gethostname()
-    except Exception:  # noqa: BLE001
+    except Exception:
         host = "unknown"
     return f"{host}@{os.getpid()}"
 
@@ -109,7 +110,7 @@ def _safe_str(value: Any) -> str:
         return ""
     try:
         return str(value)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return "<unstringifiable>"
 
 
@@ -129,7 +130,7 @@ def _resolve_occurred_at(message: Any) -> datetime:
     if isinstance(ts, (int, float)) and ts > 0:
         try:
             return datetime.fromtimestamp(ts / 1000.0, tz=UTC)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: S110  best-effort timestamp parse
             pass
     return datetime.now(UTC)
 

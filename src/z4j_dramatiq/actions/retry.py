@@ -42,8 +42,8 @@ async def retry_task_action(
     queue_name: str | None = None,
     override_args: tuple[Any, ...] | None = None,
     override_kwargs: dict[str, Any] | None = None,
-    eta: float | None = None,  # noqa: ARG001 (Dramatiq has its own delay arg)
-    priority: object = None,  # noqa: ARG001 (per-actor priority only)
+    eta: float | None = None,
+    priority: object = None,
 ) -> CommandResult:
     """Re-send the actor's message.
 
@@ -73,11 +73,13 @@ async def retry_task_action(
     try:
         if queue_name and queue_name != getattr(actor, "queue_name", None):
             new_msg = actor.send_with_options(
-                args=args, kwargs=kwargs, queue_name=queue_name,
+                args=args,
+                kwargs=kwargs,
+                queue_name=queue_name,
             )
         else:
             new_msg = actor.send(*args, **kwargs)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return CommandResult(status="failed", error=f"retry failed: {exc}")
 
     return CommandResult(
@@ -97,7 +99,7 @@ def _resolve_actor(broker: Any, actor_name: str) -> Any | None:
     if callable(fn):
         try:
             return fn(actor_name)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
     actors = getattr(broker, "actors", None)
     if actors:
@@ -110,7 +112,7 @@ def _safe_str(value: Any) -> str:
         return ""
     try:
         return str(value)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
 
 
