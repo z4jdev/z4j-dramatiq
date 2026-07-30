@@ -24,17 +24,25 @@ class TestRetry:
         assert actor.sent[-1]["kwargs"] == {"to": "x@example.com"}
 
     @pytest.mark.asyncio
-    async def test_retry_without_actor_name_fails(self, broker):
+    async def test_retry_without_overrides_fails_closed_when_no_dlq(self, broker):
+        # 1.7.1: no overrides -> requeue-by-reference via the DLQ. The fake
+        # broker has no dead-letter queue, so it must fail CLOSED rather
+        # than re-send the actor with an empty payload.
         result = await retry_task_action(broker, task_id="msg-1")
         assert result.status == "failed"
-        assert "actor_name" in result.error
+        assert "dead-letter queue" in result.error
+        assert "retry with different inputs" in result.error
 
     @pytest.mark.asyncio
-    async def test_retry_unknown_actor_fails(self, broker):
+    async def test_retry_unknown_actor_fails_on_override_path(self, broker):
+        # With operator overrides the actor is resolved for the re-send;
+        # an unknown actor fails with "not registered".
         result = await retry_task_action(
             broker,
             task_id="msg-1",
             actor_name="ghost.tasks.never",
+            override_args=("x",),
+            override_kwargs={},  # RH2: both halves required to reach the actor path
         )
         assert result.status == "failed"
         assert "not registered" in result.error
@@ -47,6 +55,7 @@ class TestRetry:
             actor_name="myapp.tasks.send_email",
             queue_name="urgent",
             override_args=("urgent-payload",),
+            override_kwargs={},  # RH2: both override halves required
         )
         assert result.status == "success"
         actor = broker.get_actor("myapp.tasks.send_email")

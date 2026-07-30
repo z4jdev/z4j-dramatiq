@@ -50,6 +50,14 @@ class DramatiqEngineAdapter:
     name: str = DRAMATIQ_ENGINE_NAME
     protocol_version: str = PROTOCOL_VERSION
 
+    #: P1-1: attests this adapter implements the 1.7.1 safe-retry contract --
+    #: retry_task STRIPS the smuggled ``__z4j_actor_name__`` / ``__z4j_queue_name__``
+    #: control keys from override_kwargs and re-runs the ORIGINAL message by
+    #: reference (DLQ resurrect), failing closed rather than re-sending the actor
+    #: with an empty payload. The z4j-bare dispatcher reads this flag to refuse a
+    #: retry when paired with a pre-1.7.1 adapter that lacks it.
+    safe_retry_by_reference: bool = True
+
     def __init__(
         self,
         *,
@@ -306,19 +314,28 @@ class DramatiqEngineAdapter:
         eta: float | None = None,
         priority: object = None,
     ) -> CommandResult:
+        # The bare dispatcher smuggles the brain-supplied actor name (and
+        # optional queue) through override_kwargs magic keys because this
+        # retry_task signature pre-dates a task_name kwarg. Extract them on
+        # a COPY, then if nothing genuine remains, collapse the dict back to
+        # None. Otherwise a control-key-only override_kwargs would read as an
+        # operator override downstream (has_overrides = override_kwargs is
+        # not None) and SKIP the DLQ requeue-by-reference path, re-sending
+        # the actor with an EMPTY payload instead of resurrecting the
+        # original message (1.7.1 H2).
+        actor_name: str | None = None
+        queue_name: str | None = None
+        if override_kwargs is not None:
+            override_kwargs = dict(override_kwargs)
+            actor_name = override_kwargs.pop("__z4j_actor_name__", None)
+            queue_name = override_kwargs.pop("__z4j_queue_name__", None)
+            if not override_kwargs:
+                override_kwargs = None
         return await retry_task_action(
             self.broker,
             task_id=task_id,
-            actor_name=(
-                (override_kwargs or {}).pop("__z4j_actor_name__", None)
-                if override_kwargs is not None
-                else None
-            ),
-            queue_name=(
-                (override_kwargs or {}).pop("__z4j_queue_name__", None)
-                if override_kwargs is not None
-                else None
-            ),
+            actor_name=actor_name,
+            queue_name=queue_name,
             override_args=override_args,
             override_kwargs=override_kwargs,
             eta=eta,
@@ -400,9 +417,18 @@ class DramatiqEngineAdapter:
     # ------------------------------------------------------------------
 
     def capabilities(self) -> set[str]:
-        return set(
+        caps = set(
             ABORTABLE_CAPABILITIES if _has_abortable(self.broker) else DEFAULT_CAPABILITIES,
         )
+        # M3: bulk_retry + requeue_dead_letter recover a failed message BY
+        # REFERENCE through the dead-letter queue, which a stock dramatiq
+        # broker does NOT provide. Advertise them only when a DeadLetter
+        # middleware is present; otherwise every id would fail closed, so the
+        # button must not appear. (retry_task itself stays -- it works from
+        # operator overrides via the actor.)
+        if not _has_dlq(self.broker):
+            caps -= {"bulk_retry", "requeue_dead_letter"}
+        return caps
 
 
 # ---------------------------------------------------------------------------
@@ -437,6 +463,30 @@ def _has_abortable(broker: Any) -> bool:
         # check on the class name.
         return any(type(mw).__name__ == "Abortable" for mw in middleware)
     return any(isinstance(mw, Abortable) for mw in middleware)
+
+
+def _has_dlq(broker: Any) -> bool:
+    """True iff the broker exposes the FULL native dead-letter recovery path
+    that the by-reference retry actions (bulk_retry / requeue_dead_letter)
+    actually drive in ``actions/dlq.py._try_native_dlq``: a callable
+    ``broker.get_dead_letter`` fetcher AND a DeadLetter middleware with a
+    callable ``resurrect``.
+
+    RM2: a class-name match alone over-reports -- a broker missing
+    ``get_dead_letter`` (or a DeadLetter middleware whose ``resurrect`` is not
+    callable) would advertise the bulk_retry / requeue_dead_letter buttons,
+    then have every id fall through to fail-closed at runtime. Gate the
+    capability on the methods the recovery path really needs so the button
+    only appears when it can work."""
+    if not callable(getattr(broker, "get_dead_letter", None)):
+        return False
+    middleware = getattr(broker, "middleware", None) or []
+    # dramatiq:473: match a DeadLetter subclass / proxy across the MRO (with a
+    # callable resurrect), not only the exact leaf class name. Shared with the
+    # runtime recovery path so the advertised capability and the path agree.
+    from z4j_dramatiq.actions.dlq import is_dead_letter_middleware
+
+    return any(is_dead_letter_middleware(mw) for mw in middleware)
 
 
 __all__ = ["DramatiqEngineAdapter"]

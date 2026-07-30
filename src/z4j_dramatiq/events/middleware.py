@@ -19,12 +19,12 @@ Hooks we deliberately do NOT use:
 - ``before_worker_boot`` / ``after_worker_boot`` - worker lifecycle,
   surfaced via the heartbeat instead.
 
-Safety properties (CLAUDE.md §2.2):
+Safety properties:
 
 - Every hook runs through a top-level try/except. A bug in our
   code cannot crash the user's worker.
 - The middleware does not deserialize args/kwargs. Mapper drops
-  them by design (CLAUDE.md §2.3).
+  them by design.
 """
 
 from __future__ import annotations

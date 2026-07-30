@@ -194,12 +194,12 @@ class TestCapabilitiesDoNotLie:
 
 
 # ---------------------------------------------------------------------------
-# T8 - R7 H-2 regression: retry path NEVER reads broker-stored message body
+# T8 - regression: retry path NEVER reads broker-stored message body
 # ---------------------------------------------------------------------------
 
 
 class TestRetryDoesNotReadBrokerStoredMessageBody:
-    """R7 audit finding H-2 (pickle-in-retry) regression guard.
+    """Audit finding H-2 (pickle-in-retry) regression guard.
 
     Dramatiq's default MessageEncoder is JSON, not pickle, but an
     operator may swap in any encoder (including pickle). The retry
@@ -258,16 +258,17 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
         )
 
     @pytest.mark.asyncio
-    async def test_retry_refuses_without_actor_name(self, broker):
-        """Without a brain-supplied actor_name we cannot reconstruct
-        the target. We must fail loudly rather than scan the broker
-        for the message and infer the actor from the stored body.
+    async def test_retry_without_safe_source_fails_closed(self, broker):
+        """1.7.1: with no dead-letter queue to requeue by reference AND no
+        operator overrides, retry must FAIL CLOSED -- never scan the broker
+        for the message and infer the actor/args from the stored body, and
+        never re-run the actor with an empty payload.
         """
         from z4j_dramatiq.actions.retry import retry_task_action
 
         result = await retry_task_action(broker, task_id="msg-1")
         assert result.status == "failed"
-        assert "actor_name" in result.error
+        assert "dead-letter queue" in result.error
 
     @pytest.mark.asyncio
     async def test_dlq_requeue_refuses_without_actor_name(self, broker):
@@ -279,18 +280,29 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
         assert "actor_name" in result.error
 
     @pytest.mark.asyncio
-    async def test_bulk_retry_skips_ids_without_actor_mapping(self, broker):
-        """The bulk path also refuses to guess - missing actor in the
-        brain-supplied mapping yields a ``skipped`` count, not a
-        broker-side lookup.
+    async def test_bulk_retry_ignores_client_actor_fields_cx_h5(self, broker):
+        """CX-H5: the bulk path must NEVER invoke a client-named actor.
+        Executable filter fields (actors/args/kwargs/queues) are ignored;
+        each id is requeued by reference or fails closed. Here the fake
+        broker has no DLQ, so every id fails closed AND the client-named
+        actor is never sent.
         """
         from z4j_dramatiq.actions.bulk_retry import bulk_retry_action
 
         result = await bulk_retry_action(
             broker,
-            filter={"task_ids": ["msg-1", "msg-2"], "actors": {}},
+            filter={
+                "task_ids": ["msg-1", "msg-2"],
+                "actors": {
+                    "msg-1": "myapp.tasks.send_email",
+                    "msg-2": "myapp.tasks.send_email",
+                },
+                "args": {"msg-1": ["attacker-payload"]},
+            },
             max=10,
         )
         assert result.status == "success"
         assert result.result["retried"] == 0
-        assert result.result["skipped"] == 2
+        assert set(result.result["errors"]) == {"msg-1", "msg-2"}
+        # The client-named actor was never invoked with attacker inputs.
+        assert broker.get_actor("myapp.tasks.send_email").sent == []

@@ -9,7 +9,7 @@ Dramatiq's ``Message`` is a flat ``namedtuple``-ish object exposing:
 - ``options``         - dict of Dramatiq-internal options
 - ``message_timestamp`` - UTC ms epoch the message was created
 
-Security invariants (CLAUDE.md §2.3):
+Security invariants:
 
 - We **never** forward ``args`` / ``kwargs`` raw. The mapper drops
   them entirely; only the actor name and queue survive.

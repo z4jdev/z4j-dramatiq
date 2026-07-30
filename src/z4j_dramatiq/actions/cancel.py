@@ -18,7 +18,15 @@ from typing import Any
 
 from z4j_core.models import CommandResult
 
+from z4j_dramatiq._offload import (
+    OffloadTimeoutError,
+    indeterminate_timeout_result,
+    offload,
+)
+
 logger = logging.getLogger("z4j.adapter.dramatiq.actions.cancel")
+
+_OFFLOAD_TIMEOUT = 10.0
 
 
 async def cancel_task_action(
@@ -57,7 +65,15 @@ async def cancel_task_action(
         )
 
     try:
-        abort(task_id)
+        await offload(abort, task_id, timeout=_OFFLOAD_TIMEOUT)
+    except OffloadTimeoutError:
+        # The abort message may still reach the worker; report
+        # indeterminate rather than a clean failure.
+        return indeterminate_timeout_result(
+            "cancel",
+            _OFFLOAD_TIMEOUT,
+            hint="the message may still be aborted",
+        )
     except Exception as exc:
         return CommandResult(status="failed", error=f"cancel failed: {exc}")
 

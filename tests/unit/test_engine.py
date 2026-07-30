@@ -25,15 +25,51 @@ class TestProtocolConformance:
 
 
 class TestCapabilityPromotion:
-    def test_default_capabilities_without_abortable(self, broker):
+    def test_default_capabilities_without_abortable_or_dlq(self, broker):
+        # No Abortable and no DeadLetter middleware: cancel is absent, and
+        # (M3) the DLQ-based retry caps are NOT advertised because there is
+        # no dead-letter queue to requeue by reference.
         adapter = DramatiqEngineAdapter(broker=broker)
-        assert adapter.capabilities() == set(DEFAULT_CAPABILITIES)
-        assert "cancel_task" not in adapter.capabilities()
+        caps = adapter.capabilities()
+        assert caps == set(DEFAULT_CAPABILITIES) - {"bulk_retry", "requeue_dead_letter"}
+        assert "cancel_task" not in caps
+        assert "bulk_retry" not in caps
+        assert "requeue_dead_letter" not in caps
 
     def test_capabilities_promoted_with_abortable(self, broker_with_abortable):
+        # Abortable present (cancel promoted) but still no DeadLetter, so the
+        # DLQ-based caps stay withheld.
         adapter = DramatiqEngineAdapter(broker=broker_with_abortable)
-        assert adapter.capabilities() == set(ABORTABLE_CAPABILITIES)
-        assert "cancel_task" in adapter.capabilities()
+        caps = adapter.capabilities()
+        assert caps == set(ABORTABLE_CAPABILITIES) - {"bulk_retry", "requeue_dead_letter"}
+        assert "cancel_task" in caps
+
+    def test_dlq_capabilities_advertised_with_deadletter(self, broker):
+        # M3/RM2: the by-reference retry caps are advertised only when the FULL
+        # native path _try_native_dlq drives is present -- both a callable
+        # broker.get_dead_letter AND a DeadLetter middleware with resurrect.
+        class DeadLetter:
+            def resurrect(self, task_id):
+                return True
+
+        broker.get_dead_letter = lambda task_id: []
+        broker.middleware.append(DeadLetter())
+        caps = DramatiqEngineAdapter(broker=broker).capabilities()
+        assert {"bulk_retry", "requeue_dead_letter"} <= caps
+
+    def test_dlq_capabilities_withheld_when_path_incomplete(self, broker):
+        # RM2: a DeadLetter middleware WITHOUT a matching broker.get_dead_letter
+        # cannot actually resurrect (_try_native_dlq returns None at the
+        # fetcher check and every id falls through to fail-closed), so the caps
+        # must stay hidden rather than advertise a button that never works.
+        class DeadLetter:
+            def resurrect(self, task_id):
+                return True
+
+        broker.middleware.append(DeadLetter())  # but no broker.get_dead_letter
+        caps = DramatiqEngineAdapter(broker=broker).capabilities()
+        assert "bulk_retry" not in caps
+        assert "requeue_dead_letter" not in caps
 
 
 class TestUnsupportedActionsHonest:
@@ -53,6 +89,22 @@ class TestUnsupportedActionsHonest:
         result = await adapter.requeue_dead_letter("any-id")
         assert result.status == "failed"
         assert "actor_name" in result.error
+
+    @pytest.mark.asyncio
+    async def test_retry_no_override_does_not_send_actor_empty_h2(self, broker):
+        # H2: a no-override retry smuggles the actor name via
+        # override_kwargs["__z4j_actor_name__"]. After the engine pops it the
+        # emptied dict must NOT read as an operator override (which would
+        # re-send the actor with an EMPTY payload). With no DLQ holding the
+        # message the retry fails closed; the actor is never sent.
+        adapter = DramatiqEngineAdapter(broker=broker)
+        actor = broker.get_actor("myapp.tasks.send_email")
+        result = await adapter.retry_task(
+            "msg-1",
+            override_kwargs={"__z4j_actor_name__": "myapp.tasks.send_email"},
+        )
+        assert result.status == "failed"  # no DLQ holds it -> fail closed
+        assert actor.sent == []  # actor was NEVER re-sent with empty args
 
     @pytest.mark.asyncio
     async def test_restart_worker_returns_failed_with_explanation(self, broker):

@@ -22,6 +22,13 @@ def buf(tmp_path: Path) -> BufferStore:
     store.close()
 
 
+def test_adapter_attests_safe_retry_contract_p1_1() -> None:
+    # P1-1: the dispatcher refuses a dramatiq retry/requeue unless the loaded
+    # adapter attests it strips the smuggled actor-name key and resurrects by
+    # reference. This 1.7.1 adapter must set the flag.
+    assert DramatiqEngineAdapter.safe_retry_by_reference is True
+
+
 @pytest.mark.asyncio
 async def test_schedule_fire_end_to_end_through_dispatcher(
     broker: FakeBroker,
