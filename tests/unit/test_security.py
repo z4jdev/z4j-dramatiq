@@ -105,7 +105,7 @@ class TestCapabilitiesHonestAboutAbortable:
         adapter = DramatiqEngineAdapter(broker=broker)
         assert "cancel_task" not in adapter.capabilities()
 
-    def test_cancel_appears_with_abortable(self, broker_with_abortable):
+    def test_pending_cancel_requires_abortable(self, broker_with_abortable):
         from z4j_dramatiq.engine import DramatiqEngineAdapter
 
         adapter = DramatiqEngineAdapter(broker=broker_with_abortable)
@@ -119,7 +119,7 @@ class TestCapabilitiesHonestAboutAbortable:
 
         result = await cancel_task_action(broker, task_id="any-id")
         assert result.status == "failed"
-        assert "Abortable" in result.error
+        assert "no built-in cancel" in result.error
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +268,7 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
 
         result = await retry_task_action(broker, task_id="msg-1")
         assert result.status == "failed"
-        assert "dead-letter queue" in result.error
+        assert "no recoverable dead-letter API" in result.error
 
     @pytest.mark.asyncio
     async def test_dlq_requeue_refuses_without_actor_name(self, broker):
@@ -277,7 +277,7 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
 
         result = await requeue_dead_letter_action(broker, task_id="msg-1")
         assert result.status == "failed"
-        assert "actor_name" in result.error
+        assert "no recoverable dead-letter API" in result.error
 
     @pytest.mark.asyncio
     async def test_bulk_retry_ignores_client_actor_fields_cx_h5(self, broker):
@@ -301,8 +301,7 @@ class TestRetryDoesNotReadBrokerStoredMessageBody:
             },
             max=10,
         )
-        assert result.status == "success"
-        assert result.result["retried"] == 0
-        assert set(result.result["errors"]) == {"msg-1", "msg-2"}
+        assert result.status == "failed"
+        assert "no recoverable dead-letter API" in (result.error or "")
         # The client-named actor was never invoked with attacker inputs.
         assert broker.get_actor("myapp.tasks.send_email").sent == []

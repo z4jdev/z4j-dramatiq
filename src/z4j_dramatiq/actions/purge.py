@@ -1,10 +1,11 @@
 """``purge_queue`` action - empty a Dramatiq queue.
 
-Same H13/M-7 guard as the Celery + RQ adapters: a keyed
+Same guard as the Celery and RQ adapters: a keyed
 ``HMAC(project_secret, "purge|queue|depth")`` confirm-token gate (see
 ``z4j_core.purge_token``; keying stops a depth-observer forging or
-refreshing a token, with a grace window that still accepts the pre-1.7
-unkeyed token and warns), a depth threshold, and a ``force=True`` bypass.
+refreshing a token for another depth), a depth threshold, and a
+``force=True`` bypass. The pre-1.7 unkeyed token is accepted only when the
+operator explicitly enables ``Z4J_ACCEPT_LEGACY_PURGE_TOKEN``.
 
 Dramatiq exposes per-broker purge primitives:
 
@@ -51,8 +52,8 @@ def _resolve_agent_secret() -> bytes | None:
     """Raw per-project secret for keying the confirm token, or None.
 
     Reads + decodes ``Z4J_HMAC_SECRET`` the same way frame signing does;
-    None (absent/undecodable) leaves only the legacy unkeyed token
-    verifiable during the grace window.
+    None (absent/undecodable) leaves only an explicitly enabled legacy
+    unkeyed token verifiable.
     """
     raw = os.environ.get("Z4J_HMAC_SECRET")
     if not raw:
@@ -181,11 +182,23 @@ def _depth(broker: Any, queue_name: str) -> int | None:
     if callable(fn):
         try:
             counts = fn(queue_name)
-            # Dramatiq returns (queued, delayed, dead) tuple.
+            # RabbitMQ returns (ready, delayed, dead-letter), and flush()
+            # deletes all three. The authorization count must cover every
+            # queue the mutation will empty.
             if isinstance(counts, (tuple, list)) and counts:
-                return int(counts[0] or 0)
+                return sum(int(value or 0) for value in counts)
         except Exception:  # noqa: S110  fall through to the alternate probe
             pass
+    # RedisBroker exposes its Lua qsize command dynamically and flushes both
+    # the ready queue and Dramatiq's delayed queue. Measure both or refuse.
+    qsize = getattr(broker, "do_qsize", None)
+    if callable(qsize):
+        try:
+            from dramatiq.brokers.redis import dq_name
+
+            return int(qsize(queue_name) or 0) + int(qsize(dq_name(queue_name)) or 0)
+        except Exception:
+            return None
     fn = getattr(broker, "queue_count", None) or getattr(broker, "depth", None)
     if callable(fn):
         try:

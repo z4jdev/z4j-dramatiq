@@ -9,8 +9,9 @@ Lifecycle hooks we use:
 
 - ``after_enqueue`` → ``task.received``
 - ``before_process_message`` → ``task.started``
-- ``after_process_message`` → ``task.succeeded`` if ``exception is None``,
-  else ``task.failed``
+- ``after_process_message`` → ``task.succeeded`` if ``exception is None``;
+  otherwise ``task.retried`` when Retries re-enqueued it, or ``task.failed``
+  when the attempt exhausted its retries
 
 Hooks we deliberately do NOT use:
 
@@ -21,8 +22,8 @@ Hooks we deliberately do NOT use:
 
 Safety properties:
 
-- Every hook runs through a top-level try/except. A bug in our
-  code cannot crash the user's worker.
+- Every mapped emit runs through an ``Exception`` boundary. A build or sink
+  failure is logged and dropped; process-lifecycle exceptions still propagate.
 - The middleware does not deserialize args/kwargs. Mapper drops
   them by design.
 """
@@ -64,7 +65,11 @@ _Base = _resolve_base()
 
 
 class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
-    """Dramatiq middleware that emits z4j events for every message.
+    """Attempt mapped z4j lifecycle events from Dramatiq middleware hooks.
+
+    Event construction or sink failures are logged and dropped. The engine's
+    downstream event queue is also bounded, so this is observational capture,
+    not a guarantee that every message reaches the brain.
 
     Args:
         sink: Callable invoked with each :class:`Event` produced.
@@ -97,11 +102,16 @@ class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
         delay: int | None,
     ) -> None:
         """Message has been written to the broker - emit ``task.received``."""
-        self._safe_emit(EventKind.TASK_RECEIVED, message)
+        self._safe_emit(
+            EventKind.TASK_RECEIVED,
+            message,
+            broker=broker,
+            use_message_timestamp=True,
+        )
 
     def before_process_message(self, broker: Any, message: Any) -> None:
         """Worker has fetched the message and is about to run it."""
-        self._safe_emit(EventKind.TASK_STARTED, message)
+        self._safe_emit(EventKind.TASK_STARTED, message, broker=broker)
 
     def after_process_message(
         self,
@@ -112,8 +122,18 @@ class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
         exception: BaseException | None = None,
     ) -> None:
         """Worker has finished - success or failure based on ``exception``."""
-        kind = EventKind.TASK_FAILED if exception is not None else EventKind.TASK_SUCCEEDED
-        self._safe_emit(kind, message, exception=exception)
+        if exception is None:
+            kind = EventKind.TASK_SUCCEEDED
+        elif not bool(getattr(message, "failed", False)) and "requeue_timestamp" in (
+            getattr(message, "options", None) or {}
+        ):
+            # Retries has already run because Z4J is inserted before it and
+            # Dramatiq invokes after-hooks in reverse. The requeue timestamp is
+            # Retries' proof that replacement work was enqueued.
+            kind = EventKind.TASK_RETRIED
+        else:
+            kind = EventKind.TASK_FAILED
+        self._safe_emit(kind, message, broker=broker, exception=exception)
 
     # ------------------------------------------------------------------
     # Internal: build + sink without ever raising into Dramatiq
@@ -123,7 +143,10 @@ class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
         self,
         kind: EventKind,
         message: Any,
+        *,
+        broker: Any,
         exception: BaseException | None = None,
+        use_message_timestamp: bool = False,
     ) -> None:
         sink = self._sink
         redaction = self._redaction
@@ -132,8 +155,9 @@ class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
                 kind=kind,
                 message=message,
                 redaction=redaction,
-                actor=_resolve_actor(message),
+                actor=_resolve_actor(broker, message),
                 exception=exception,
+                use_message_timestamp=use_message_timestamp,
             )
             sink(event)
         except Exception:
@@ -143,20 +167,15 @@ class Z4JMiddleware(_Base):  # type: ignore[misc, valid-type]
             )
 
 
-def _resolve_actor(message: Any) -> Any | None:
+def _resolve_actor(broker: Any, message: Any) -> Any | None:
     """Best-effort lookup of the actor for ``message``.
 
     Dramatiq stores every registered actor on the broker. If the
-    user passes us a Message we can resolve back to the actor (and
-    therefore to ``@z4j_meta`` decorations) via the global broker
-    registry. Failures are silent - we just drop the meta lookup.
+    user passes us a Message we can resolve back to the actor (and therefore
+    to ``@z4j_meta`` decorations) on the broker that invoked the hook. Failures
+    are silent - we just drop the meta lookup.
     """
     try:
-        from dramatiq import get_broker  # type: ignore[import-not-found]
-    except ImportError:
-        return None
-    try:
-        broker = get_broker()
         actor_name = getattr(message, "actor_name", None)
         if actor_name is None:
             return None

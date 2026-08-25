@@ -31,23 +31,19 @@ class TestCapabilityPromotion:
         # no dead-letter queue to requeue by reference.
         adapter = DramatiqEngineAdapter(broker=broker)
         caps = adapter.capabilities()
-        assert caps == set(DEFAULT_CAPABILITIES) - {"bulk_retry", "requeue_dead_letter"}
+        assert caps == set(DEFAULT_CAPABILITIES)
         assert "cancel_task" not in caps
         assert "bulk_retry" not in caps
         assert "requeue_dead_letter" not in caps
 
     def test_capabilities_promoted_with_abortable(self, broker_with_abortable):
-        # Abortable present (cancel promoted) but still no DeadLetter, so the
-        # DLQ-based caps stay withheld.
+        # Abortable enables the deliberately pending-only cancel path.
         adapter = DramatiqEngineAdapter(broker=broker_with_abortable)
         caps = adapter.capabilities()
-        assert caps == set(ABORTABLE_CAPABILITIES) - {"bulk_retry", "requeue_dead_letter"}
+        assert caps == set(ABORTABLE_CAPABILITIES)
         assert "cancel_task" in caps
 
-    def test_dlq_capabilities_advertised_with_deadletter(self, broker):
-        # M3/RM2: the by-reference retry caps are advertised only when the FULL
-        # native path _try_native_dlq drives is present -- both a callable
-        # broker.get_dead_letter AND a DeadLetter middleware with resurrect.
+    def test_fictional_dlq_interface_does_not_promote_capabilities(self, broker):
         class DeadLetter:
             def resurrect(self, task_id):
                 return True
@@ -55,7 +51,8 @@ class TestCapabilityPromotion:
         broker.get_dead_letter = lambda task_id: []
         broker.middleware.append(DeadLetter())
         caps = DramatiqEngineAdapter(broker=broker).capabilities()
-        assert {"bulk_retry", "requeue_dead_letter"} <= caps
+        assert "bulk_retry" not in caps
+        assert "requeue_dead_letter" not in caps
 
     def test_dlq_capabilities_withheld_when_path_incomplete(self, broker):
         # RM2: a DeadLetter middleware WITHOUT a matching broker.get_dead_letter
@@ -74,12 +71,11 @@ class TestCapabilityPromotion:
 
 class TestUnsupportedActionsHonest:
     @pytest.mark.asyncio
-    async def test_bulk_retry_now_succeeds(self, broker):
-        """Promoted to shipped feature in v2026.5."""
+    async def test_bulk_retry_fails_closed(self, broker):
         adapter = DramatiqEngineAdapter(broker=broker)
         result = await adapter.bulk_retry({}, max=10)
-        assert result.status == "success"
-        assert "retried" in (result.result or {})
+        assert result.status == "failed"
+        assert "no recoverable dead-letter API" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_dlq_requires_actor_name(self, broker):
@@ -88,7 +84,7 @@ class TestUnsupportedActionsHonest:
         adapter = DramatiqEngineAdapter(broker=broker)
         result = await adapter.requeue_dead_letter("any-id")
         assert result.status == "failed"
-        assert "actor_name" in result.error
+        assert "no recoverable dead-letter API" in result.error
 
     @pytest.mark.asyncio
     async def test_retry_no_override_does_not_send_actor_empty_h2(self, broker):
@@ -105,6 +101,21 @@ class TestUnsupportedActionsHonest:
         )
         assert result.status == "failed"  # no DLQ holds it -> fail closed
         assert actor.sent == []  # actor was NEVER re-sent with empty args
+
+    @pytest.mark.asyncio
+    async def test_retry_preserves_explicit_empty_kwargs_with_override_args(self, broker):
+        adapter = DramatiqEngineAdapter(broker=broker)
+        actor = broker.get_actor("myapp.tasks.send_email")
+
+        result = await adapter.retry_task(
+            "msg-1",
+            override_args=("replacement",),
+            override_kwargs={"__z4j_actor_name__": "myapp.tasks.send_email"},
+        )
+
+        assert result.status == "success"
+        assert actor.sent[-1]["args"] == ("replacement",)
+        assert actor.sent[-1]["kwargs"] == {}
 
     @pytest.mark.asyncio
     async def test_restart_worker_returns_failed_with_explanation(self, broker):
@@ -205,3 +216,20 @@ class TestHealthDictShape:
         adapter = DramatiqEngineAdapter(broker=broker_with_abortable)
         health = adapter.get_health()
         assert health["abortable_installed"] is True
+
+    def test_health_does_not_claim_connected_without_probe(self):
+        class RedisBroker:
+            def __init__(self) -> None:
+                self.actors = {}
+                self.middleware = []
+
+        health = DramatiqEngineAdapter(broker=RedisBroker()).get_health()
+        assert health["broker_connected"] is False
+
+    def test_health_failed_probe_is_not_connected(self, broker):
+        broker.get_queue_message_counts = lambda _queue: (_ for _ in ()).throw(
+            ConnectionError("down"),
+        )
+        health = DramatiqEngineAdapter(broker=broker).get_health()
+        assert health["broker_connected"] is False
+        assert "down" in health["broker_error"]

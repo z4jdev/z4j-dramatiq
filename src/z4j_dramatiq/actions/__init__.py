@@ -1,16 +1,10 @@
 """Dramatiq adapter actions.
 
-Day-1 surface (per `docs/MULTI_ENGINE_PLAN.md` §5):
-
-- :func:`retry_task_action` - re-send the original Message.
-- :func:`cancel_task_action` - Abortable-gated; the engine adapter
-  promotes ``cancel_task`` into the capability set only when the
-  user has the ``Abortable`` middleware installed.
-- :func:`purge_queue_action` - empty a queue with confirm-token guard.
-
-Deferred to v1.1 (also §5):
-
-- bulk_retry, requeue_dead_letter, rate_limit, restart_worker.
+The base portable surface is submit, retry with complete operator replacement
+inputs, and guarded queue purge. Pending-task cancel is promoted only with the
+external ``dramatiq-abort`` Abortable middleware. Bulk-retry and dead-letter
+helpers remain importable for compatibility but fail closed because stock
+Dramatiq has no recoverable dead-letter primitive.
 """
 
 from __future__ import annotations

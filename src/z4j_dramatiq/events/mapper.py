@@ -43,6 +43,7 @@ def build_event(
     actor: Any | None = None,
     exception: BaseException | None = None,
     extra: dict[str, Any] | None = None,
+    use_message_timestamp: bool = False,
 ) -> Event:
     """Construct an :class:`Event` from a Dramatiq Message."""
     actor_name = _safe_str(getattr(message, "actor_name", "unknown"))
@@ -85,7 +86,9 @@ def build_event(
         engine=DRAMATIQ_ENGINE_NAME,
         task_id=_safe_str(getattr(message, "message_id", "")),
         kind=kind,
-        occurred_at=_resolve_occurred_at(message),
+        occurred_at=(
+            _resolve_message_timestamp(message) if use_message_timestamp else datetime.now(UTC)
+        ),
         data=payload,
     )
 
@@ -124,8 +127,8 @@ def _safe_truncate(value: str, limit: int) -> str:
     return truncated + "…[truncated]"
 
 
-def _resolve_occurred_at(message: Any) -> datetime:
-    """Prefer the Message's own timestamp; fall back to now()."""
+def _resolve_message_timestamp(message: Any) -> datetime:
+    """Resolve the enqueue timestamp carried by a Message."""
     ts = getattr(message, "message_timestamp", None)
     if isinstance(ts, (int, float)) and ts > 0:
         try:

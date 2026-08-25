@@ -1,19 +1,13 @@
-"""``cancel`` action - Abortable-gated cancel for Dramatiq.
+"""Pending-task cancellation through the optional ``dramatiq-abort`` package.
 
-Dramatiq supports cancel ONLY when the user has the
-``dramatiq.middleware.Abortable`` middleware installed. The engine
-adapter checks the broker's middleware stack at startup and only
-advertises ``cancel_task`` in :meth:`capabilities` when it is.
-
-If a cancel command somehow reaches this action without Abortable
-being installed (e.g. a brain that ignores the capability set),
-we fail loudly rather than silently no-op - that's the only honest
-behaviour for an action the engine cannot perform.
+Stock Dramatiq has no cancellation primitive. The separate
+``dramatiq-abort`` package can prevent pending work or interrupt running work.
+z4j deliberately uses only its pending mode because a running abort is seen as
+an exception by Dramatiq's Retries middleware and can enqueue another attempt.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from z4j_core.models import CommandResult
@@ -24,8 +18,6 @@ from z4j_dramatiq._offload import (
     offload,
 )
 
-logger = logging.getLogger("z4j.adapter.dramatiq.actions.cancel")
-
 _OFFLOAD_TIMEOUT = 10.0
 
 
@@ -34,45 +26,58 @@ async def cancel_task_action(
     *,
     task_id: str,
 ) -> CommandResult:
-    """Send an abort-message to the worker that owns ``task_id``."""
-    if not _broker_has_abortable(broker):
-        return CommandResult(
-            status="failed",
-            error=(
-                "cancel_task requires the Dramatiq Abortable middleware. "
-                "Add it to your broker.middleware stack and restart the "
-                "worker. See: "
-                "https://dramatiq.io/reference.html#dramatiq.middleware.Abortable"
-            ),
-        )
+    """Prevent a pending message from starting.
 
-    # B15: dramatiq's abort lives in the SEPARATE ``dramatiq-abort``
-    # package -- core ``dramatiq.middleware`` has no ``Abortable`` in modern
-    # dramatiq (the old import here ALWAYS ImportError'd on dramatiq>=2, so
-    # cancel was advertised by the engine's structural gate yet always
-    # failed). Its middleware class is named ``Abortable`` (what the gate
-    # detects) and the abort is a module-level ``abort(message_id)``.
+    This does not interrupt work that is already running. Passing the adapter's
+    own middleware instance also avoids accidentally signalling a different
+    process-global Dramatiq broker.
+    """
+    middleware = getattr(broker, "middleware", None) or []
     try:
-        from dramatiq_abort import abort  # type: ignore[import-not-found]
+        abortable_type, abort, abort_mode = _load_abort_api()
     except ImportError:
+        if not any(type(item).__name__ == "Abortable" for item in middleware):
+            return CommandResult(
+                status="failed",
+                error=(
+                    "cancel_task requires the dramatiq-abort Abortable middleware; "
+                    "stock Dramatiq has no built-in cancel primitive"
+                ),
+            )
         return CommandResult(
             status="failed",
             error=(
                 "cancel_task requires the `dramatiq-abort` package. Install "
-                "z4j-dramatiq[abort] (or `pip install dramatiq-abort`) and add "
-                "its Abortable middleware to your broker."
+                "z4j-dramatiq[abort] and add its Abortable middleware."
+            ),
+        )
+
+    abortable = next(
+        (item for item in middleware if isinstance(item, abortable_type)),
+        None,
+    )
+    if abortable is None:
+        return CommandResult(
+            status="failed",
+            error=(
+                "cancel_task requires the dramatiq-abort Abortable middleware; "
+                "stock Dramatiq has no built-in cancel primitive"
             ),
         )
 
     try:
-        await offload(abort, task_id, timeout=_OFFLOAD_TIMEOUT)
+        await offload(
+            abort,
+            task_id,
+            middleware=abortable,
+            mode=abort_mode.CANCEL,
+            timeout=_OFFLOAD_TIMEOUT,
+        )
     except OffloadTimeoutError:
-        # The abort message may still reach the worker; report
-        # indeterminate rather than a clean failure.
         return indeterminate_timeout_result(
             "cancel",
             _OFFLOAD_TIMEOUT,
-            hint="the message may still be aborted",
+            hint="the pending-task cancellation may still have landed",
         )
     except Exception as exc:
         return CommandResult(status="failed", error=f"cancel failed: {exc}")
@@ -81,24 +86,18 @@ async def cancel_task_action(
         status="success",
         result={
             "task_id": task_id,
-            "soft": True,
-            "note": "abort signalled; worker will honor at next checkpoint",
+            "cancelled": True,
+            "pending_only": True,
         },
     )
 
 
-def _broker_has_abortable(broker: Any) -> bool:
-    """True iff an ``Abortable`` middleware is in the broker's chain.
+def _load_abort_api() -> tuple[type[Any], Any, Any]:
+    """Load the optional API lazily so the base package stays importable."""
+    from dramatiq_abort import Abortable, abort  # type: ignore[import-not-found]
+    from dramatiq_abort.middleware import AbortMode  # type: ignore[import-not-found]
 
-    Structural (class-name) check -- matches the engine's capability gate
-    and the ``dramatiq-abort`` package's middleware, whose class is named
-    ``Abortable`` (core ``dramatiq.middleware`` has none in modern
-    versions, so an ``isinstance`` import check would always be False).
-    """
-    middleware = getattr(broker, "middleware", None)
-    if not middleware:
-        return False
-    return any(type(mw).__name__ == "Abortable" for mw in middleware)
+    return Abortable, abort, AbortMode
 
 
 __all__ = ["cancel_task_action"]

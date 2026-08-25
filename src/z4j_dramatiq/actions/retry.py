@@ -1,15 +1,9 @@
 """``retry`` action - re-enqueue a Dramatiq Message.
 
-Dramatiq stores every in-flight message in the broker until ack.
-Once acked, the original Message body is gone. A failed task is
-therefore only re-runnable BY REFERENCE via the dead-letter queue
-(the DeadLetter middleware), which preserves the original
-arguments; the brain cannot supply them because it stores them
-redacted (H3/M7). 1.7.1: a no-override retry requeues from the DLQ
-and FAILS CLOSED when no DLQ holds the message, instead of
-re-running the actor with an empty payload. Operator-supplied
-``override_args`` / ``override_kwargs`` are the explicit
-"retry with different inputs" path and re-send the actor directly.
+Dramatiq drops an acknowledged message and stock Dramatiq exposes no
+recoverable dead-letter API. A retry is therefore available only when the
+operator supplies both complete argument collections. The brain cannot replay
+its stored copy because task arguments are redacted.
 
 Audit (H-2 / pickle-in-retry): this retry path is structurally
 immune to the H-2 pattern flagged in z4j-rq. Dramatiq's default
@@ -20,9 +14,8 @@ re-enqueue via ``actor.send`` / ``actor.send_with_options`` using
 brain-supplied arguments only. An attacker who can write to the
 broker cannot trigger deserialization inside the agent through
 this surface. See also ``z4j_dramatiq.events.mapper`` (args/kwargs
-dropped at the boundary) and ``z4j_dramatiq.actions.dlq``
-(``actor_name`` required; native path uses Dramatiq's own
-``DeadLetter.resurrect`` which republishes raw bytes server-side)."""
+dropped at the boundary). Stock Dramatiq has no recoverable
+dead-letter API, so this action never attempts a by-reference replay."""
 
 from __future__ import annotations
 
@@ -42,7 +35,7 @@ logger = logging.getLogger("z4j.adapter.dramatiq.actions.retry")
 _OFFLOAD_TIMEOUT = 10.0
 
 
-async def retry_task_action(  # noqa: PLR0911  requeue-by-ref + override + fail-closed branches
+async def retry_task_action(  # noqa: PLR0911  validation + offload failure branches
     broker: Any,
     *,
     task_id: str,
@@ -53,62 +46,27 @@ async def retry_task_action(  # noqa: PLR0911  requeue-by-ref + override + fail-
     eta: float | None = None,
     priority: object = None,
 ) -> CommandResult:
-    """Re-run a failed Dramatiq task -- two safe paths (1.7.1).
-
-    (a) With operator-supplied ``override_args`` / ``override_kwargs``,
-    re-send the actor with THOSE arguments (the operator is the
-    authority on them).
-
-    (b) With NO overrides, requeue the ORIGINAL message BY REFERENCE
-    from the dead-letter queue (``DeadLetter.resurrect``, which
-    republishes the raw bytes server-side and preserves the original
-    arguments). Dramatiq drops a message once acked, so without a DLQ a
-    no-override retry cannot recover the original arguments -- the brain
-    stores them REDACTED and cannot reconstruct them (H3/M7). We
-    therefore FAIL CLOSED rather than re-run the actor with an empty
-    payload, which the pre-1.7.1 code did.
-    """
-    # NOTE: the one-sided-override hardening (RH2) is deferred to the RH1 work,
-    # which removes the __z4j_actor_name__ smuggling from override_kwargs; until
-    # then this channel cannot cleanly distinguish "operator sent empty kwargs"
-    # from "operator sent nothing".
-    has_overrides = override_args is not None or override_kwargs is not None
-
-    if not has_overrides:
-        # Requeue-by-reference via the dead-letter queue. Needs no
-        # actor_name or args -- resurrect operates on the stored message
-        # by id. Offloaded to a thread (sync broker I/O) under a timeout.
-        from z4j_dramatiq.actions.dlq import _try_native_dlq
-
-        try:
-            dlq_result = await offload(
-                _try_native_dlq,
-                broker,
-                task_id=task_id,
-                actor_name=actor_name or "",
-                timeout=_OFFLOAD_TIMEOUT,
-            )
-        except OffloadTimeoutError:
-            # The resurrect may still land on the broker; report
-            # indeterminate rather than a clean failure.
-            return indeterminate_timeout_result(
-                "retry",
-                _OFFLOAD_TIMEOUT,
-                hint="the message may still be resurrected",
-            )
-        if dlq_result is not None:
-            return dlq_result
+    """Re-run a task only from complete operator-supplied replacements."""
+    if (override_args is None) != (override_kwargs is None):
         return CommandResult(
             status="failed",
             error=(
-                f"cannot retry {task_id!r} by reference: no dead-letter "
-                "queue holds it (Dramatiq drops a message once acked, so a "
-                "failed task is only recoverable with the DeadLetter "
-                "middleware configured), and no operator override_args / "
-                "override_kwargs were supplied. The brain stores task "
-                "arguments redacted and cannot reconstruct them. Configure "
-                "the DeadLetter middleware, or use 'retry with different "
-                "inputs' to supply arguments explicitly."
+                "Dramatiq retry requires both complete override_args and "
+                "override_kwargs; the missing half cannot be recovered from "
+                "the brain's redacted task snapshot"
+            ),
+        )
+    has_overrides = override_args is not None and override_kwargs is not None
+
+    if not has_overrides:
+        return CommandResult(
+            status="failed",
+            error=(
+                f"cannot retry {task_id!r} by reference: stock Dramatiq has "
+                "no recoverable dead-letter API, and no operator "
+                "override_args / override_kwargs were supplied. The brain "
+                "stores task arguments redacted; use 'retry with different "
+                "inputs' and supply both complete argument collections."
             ),
         )
 
@@ -127,6 +85,25 @@ async def retry_task_action(  # noqa: PLR0911  requeue-by-ref + override + fail-
         return CommandResult(
             status="failed",
             error=f"actor {actor_name!r} is not registered on this broker",
+        )
+
+    if eta is not None or priority is not None:
+        unsupported = [
+            option for option, value in (("eta", eta), ("priority", priority)) if value is not None
+        ]
+        return CommandResult(
+            status="failed",
+            error=("z4j-dramatiq cannot portably honor retry option(s): " + ", ".join(unsupported)),
+        )
+
+    if queue_name and queue_name != getattr(actor, "queue_name", None):
+        return CommandResult(
+            status="failed",
+            error=(
+                f"actor {actor_name!r} is registered on queue "
+                f"{getattr(actor, 'queue_name', None)!r}; Dramatiq cannot "
+                "override an actor's queue at send time"
+            ),
         )
 
     args = tuple(override_args) if override_args is not None else ()
@@ -172,16 +149,9 @@ def _send_message(
 ) -> Any:
     """Synchronous broker enqueue - runs off the event loop.
 
-    ``actor.send`` / ``actor.send_with_options`` both drive a
-    synchronous broker write (redis/rabbitmq), so this must never
-    execute inline on the agent's single event loop.
+    ``actor.send`` drives a synchronous broker write (redis/rabbitmq), so this
+    must never execute inline on the agent's single event loop.
     """
-    if queue_name and queue_name != getattr(actor, "queue_name", None):
-        return actor.send_with_options(
-            args=args,
-            kwargs=kwargs,
-            queue_name=queue_name,
-        )
     return actor.send(*args, **kwargs)
 
 

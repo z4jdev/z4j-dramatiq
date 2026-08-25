@@ -30,7 +30,7 @@ class TestRetry:
         # than re-send the actor with an empty payload.
         result = await retry_task_action(broker, task_id="msg-1")
         assert result.status == "failed"
-        assert "dead-letter queue" in result.error
+        assert "no recoverable dead-letter API" in result.error
         assert "retry with different inputs" in result.error
 
     @pytest.mark.asyncio
@@ -48,7 +48,8 @@ class TestRetry:
         assert "not registered" in result.error
 
     @pytest.mark.asyncio
-    async def test_retry_to_different_queue_uses_send_with_options(self, broker):
+    async def test_retry_to_different_queue_fails_without_sending(self, broker):
+        actor = broker.get_actor("myapp.tasks.send_email")
         result = await retry_task_action(
             broker,
             task_id="msg-1",
@@ -57,40 +58,73 @@ class TestRetry:
             override_args=("urgent-payload",),
             override_kwargs={},  # RH2: both override halves required
         )
-        assert result.status == "success"
+        assert result.status == "failed"
+        assert "cannot override" in (result.error or "")
+        assert actor.sent == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("option", "value"), [("eta", 123.0), ("priority", 9)])
+    async def test_unsupported_retry_option_does_not_send(
+        self,
+        broker,
+        option,
+        value,
+    ):
         actor = broker.get_actor("myapp.tasks.send_email")
-        # send_with_options recorded queue_name override
-        assert actor.sent[-1].get("queue_name") == "urgent"
+        result = await retry_task_action(
+            broker,
+            task_id="msg-1",
+            actor_name="myapp.tasks.send_email",
+            override_args=(),
+            override_kwargs={},
+            **{option: value},
+        )
+        assert result.status == "failed"
+        assert option in (result.error or "")
+        assert actor.sent == []
 
 
-class TestCancelGatedByAbortable:
+class TestCancelPendingOnly:
     @pytest.mark.asyncio
     async def test_cancel_without_abortable_fails(self, broker):
         result = await cancel_task_action(broker, task_id="msg-1")
         assert result.status == "failed"
-        assert "Abortable" in result.error
+        assert "no built-in cancel" in result.error
 
     @pytest.mark.asyncio
-    async def test_cancel_with_abortable_calls_dramatiq_abort(
+    async def test_cancel_with_abortable_requests_pending_only_cancel(
         self,
         broker_with_abortable,
         monkeypatch,
     ):
-        # B15: with the Abortable middleware present AND dramatiq-abort
-        # installed, cancel must actually call abort(message_id) -- the
-        # pre-fix code imported the nonexistent dramatiq.middleware.Abortable
-        # and always failed even though the engine advertised the capability.
-        import sys
-        import types
+        from z4j_dramatiq.actions import cancel as cancel_module
 
-        calls: list[str] = []
-        fake = types.ModuleType("dramatiq_abort")
-        fake.abort = calls.append  # type: ignore[attr-defined]
-        monkeypatch.setitem(sys.modules, "dramatiq_abort", fake)
+        abortable = broker_with_abortable.middleware[-1]
+
+        class AbortMode:
+            CANCEL = object()
+            ABORT = object()
+
+        calls: list[tuple[str, object, object]] = []
+
+        def abort(task_id, *, middleware, mode):
+            calls.append((task_id, middleware, mode))
+
+        monkeypatch.setattr(
+            cancel_module,
+            "_load_abort_api",
+            lambda: (type(abortable), abort, AbortMode),
+        )
 
         result = await cancel_task_action(broker_with_abortable, task_id="msg-9")
         assert result.status == "success"
-        assert calls == ["msg-9"]
+        assert result.result == {
+            "task_id": "msg-9",
+            "cancelled": True,
+            "pending_only": True,
+        }
+        assert calls == [("msg-9", abortable, AbortMode.CANCEL)]
+        assert all(mode is not AbortMode.ABORT for _, _, mode in calls)
 
     @pytest.mark.asyncio
     async def test_cancel_with_abortable_but_package_missing_fails_clearly(
@@ -100,9 +134,12 @@ class TestCancelGatedByAbortable:
     ):
         # Abortable middleware present but dramatiq-abort NOT installed:
         # a clear, actionable error (not a silent success or opaque crash).
-        import sys
+        from z4j_dramatiq.actions import cancel as cancel_module
 
-        monkeypatch.setitem(sys.modules, "dramatiq_abort", None)  # force ImportError
+        def missing_abort_api():
+            raise ImportError("dramatiq-abort missing")
+
+        monkeypatch.setattr(cancel_module, "_load_abort_api", missing_abort_api)
         result = await cancel_task_action(broker_with_abortable, task_id="msg-9")
         assert result.status == "failed"
         assert "dramatiq-abort" in result.error
@@ -164,3 +201,35 @@ class TestPurge:
         )
         assert result.status == "failed"
         assert "Z4J_PURGE_THRESHOLD" in result.error
+
+    @pytest.mark.asyncio
+    async def test_purge_guard_counts_ready_delayed_and_dead(
+        self,
+        broker,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("Z4J_PURGE_THRESHOLD", "10000")
+        broker.get_queue_message_counts = lambda _queue: (0, 10001, 0)
+        result = await purge_queue_action(broker, queue_name="default")
+        assert result.status == "failed"
+        assert "depth 10001" in (result.error or "")
+        assert broker.purged == []
+
+    @pytest.mark.asyncio
+    async def test_redis_depth_counts_ready_and_delay_queue(self, broker, monkeypatch):
+        pytest.importorskip("redis", reason="requires z4j-dramatiq[redis]")
+        from dramatiq.brokers.redis import dq_name
+        from z4j_core.purge_token import legacy_purge_confirm_token
+
+        broker.get_queue_message_counts = None
+        counts = {"default": 2, dq_name("default"): 3}
+        broker.do_qsize = lambda queue: counts[queue]
+        monkeypatch.setenv("Z4J_ACCEPT_LEGACY_PURGE_TOKEN", "1")
+        token = legacy_purge_confirm_token(queue_name="default", queue_depth=5)
+        result = await purge_queue_action(
+            broker,
+            queue_name="default",
+            confirm_token=token,
+        )
+        assert result.status == "success"
+        assert result.result["purged"] == 5

@@ -64,6 +64,96 @@ class TestEventEmission:
         assert ev.kind == EventKind.TASK_FAILED
         assert "kaboom" in ev.data["exception"]
 
+    def test_retry_attempt_is_not_emitted_as_terminal_failure(
+        self,
+        middleware,
+        sink,
+        message,
+        broker,
+    ):
+        message.options["requeue_timestamp"] = 1_800_000_000_000
+        message.failed = False
+        middleware.after_process_message(
+            broker,
+            message,
+            exception=RuntimeError("transient"),
+        )
+        assert [event.kind for event in sink.events] == [EventKind.TASK_RETRIED]
+
+    def test_exhausted_retry_is_terminal_failure(
+        self,
+        middleware,
+        sink,
+        message,
+        broker,
+    ):
+        message.options["requeue_timestamp"] = 1_800_000_000_000
+        message.failed = True
+        middleware.after_process_message(
+            broker,
+            message,
+            exception=RuntimeError("terminal"),
+        )
+        assert [event.kind for event in sink.events] == [EventKind.TASK_FAILED]
+
+    def test_only_received_uses_message_creation_timestamp(
+        self,
+        middleware,
+        sink,
+        message,
+        broker,
+    ):
+        from datetime import UTC, datetime
+
+        old = datetime(2020, 1, 1, tzinfo=UTC)
+        message.message_timestamp = int(old.timestamp() * 1000)
+        before = datetime.now(UTC)
+        middleware.after_enqueue(broker, message, None)
+        middleware.before_process_message(broker, message)
+        middleware.after_process_message(broker, message, exception=None)
+
+        received, started, succeeded = sink.events
+        assert received.occurred_at == old
+        assert started.occurred_at >= before
+        assert succeeded.occurred_at >= started.occurred_at
+
+    def test_actor_metadata_comes_from_hook_broker(
+        self,
+        middleware,
+        sink,
+        broker,
+    ):
+        from z4j_dramatiq.meta import z4j_meta
+
+        from tests.unit.conftest import FakeMessage
+
+        @z4j_meta(tags=["passed-broker"])
+        def task():
+            return None
+
+        actor = broker.get_actor("myapp.tasks.send_email")
+        actor.fn = task
+        middleware.after_enqueue(
+            broker,
+            FakeMessage(
+                message_id="metadata",
+                actor_name="myapp.tasks.send_email",
+            ),
+            None,
+        )
+        assert sink.events[-1].data["tags"] == ["passed-broker"]
+
+
+def test_adapter_installs_before_retries_middleware():
+    from dramatiq.brokers.stub import StubBroker
+    from z4j_dramatiq.engine import DramatiqEngineAdapter
+
+    broker = StubBroker()
+    adapter = DramatiqEngineAdapter(broker=broker)
+    adapter.connect_signals()
+    names = [type(item).__name__ for item in broker.middleware]
+    assert names.index("Z4JMiddleware") < names.index("Retries")
+
 
 class TestBoundarySafety:
     """A bug in z4j must NEVER raise into Dramatiq's middleware chain."""

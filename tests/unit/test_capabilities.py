@@ -16,15 +16,13 @@ def test_default_set_frozen():
                 "submit_task",
                 "retry_task",
                 "purge_queue",
-                "bulk_retry",
-                "requeue_dead_letter",
             },
         )
         == DEFAULT_CAPABILITIES
     )
 
 
-def test_abortable_set_includes_default_plus_cancel():
+def test_abortable_promotes_pending_only_cancel():
     assert DEFAULT_CAPABILITIES | {"cancel_task"} == ABORTABLE_CAPABILITIES
 
 

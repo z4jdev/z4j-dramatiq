@@ -1,6 +1,6 @@
 [project]
 name = "z4j-dramatiq"
-version = "1.8.0"
+version = "1.9.0"
 description = "z4j Dramatiq queue engine adapter (Apache 2.0)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,16 +21,14 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "z4j-core>=1.8.0,<2",
+    "z4j-core>=1.9.0,<2",
     # The console script (z4j-<engine>) imports z4j_bare.cli at its
     # entry point, so a standalone `pip install` must pull the runtime
     # rather than rely on a co-installed framework adapter (fleet-sweep B2).
-    "z4j-bare>=1.8.0,<2",
+    "z4j-bare>=1.9.0,<2",
     # Dramatiq compatibility policy: operator-chosen primary, wide
-    # range. Audit-only adapter; all imports are deferred and target
-    # the long-stable get_broker / Message / Middleware / Abortable
-    # surface. Abortable existed in 1.13+; broker.flush() / queue
-    # counts shape stable since 1.14. The previous >=2.1.0 floor
+    # range. Imports are deferred and target the long-stable
+    # get_broker / Message / Middleware surface. The previous >=2.1.0 floor
     # excluded the Dramatiq 1.15 / 1.16 deployed majority for no
     # functional reason. ``<3`` guards a future 3.0 break.
     "dramatiq>=1.14,<3",
@@ -49,9 +47,9 @@ dependencies = [
 # stay in lockstep with the parent dramatiq pin.
 redis = ["dramatiq[redis]>=1.14,<3"]
 rabbitmq = ["dramatiq[rabbitmq]>=1.14,<3"]
-# Task cancellation needs the separate ``dramatiq-abort`` package + its
-# Abortable middleware -- core dramatiq has no abort. Without this extra,
-# cancel_task honestly reports itself unavailable.
+# Enables pending-task cancellation through the external Abortable middleware.
+# z4j deliberately does not request its running-abort mode because that
+# exception can interact with Dramatiq's Retries middleware.
 abort = ["dramatiq-abort>=1.1.0"]
 
 [project.scripts]
@@ -70,7 +68,7 @@ Issues = "https://github.com/z4jdev/z4j-dramatiq/issues"
 Source = "https://github.com/z4jdev/z4j-dramatiq"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

@@ -3,7 +3,7 @@
 The bare-agent dispatcher's v1.1.0 ``schedule.fire`` path routes
 brain-side scheduler ticks to ``engine.submit_task(...)``. These tests
 pin the contract for the Dramatiq engine: when the actor is registered
-with the global broker, ``submit_task`` MUST call
+with the broker passed to the adapter, ``submit_task`` MUST call
 ``actor.send_with_options(args, kwargs, queue_name)``. When it isn't
 registered, the adapter falls back to constructing a raw
 ``dramatiq.Message`` and ``broker.enqueue(msg)`` so cross-process actor
@@ -71,7 +71,7 @@ class TestSubmitTask:
         assert actor.sent[0]["args"] == ("alice@example.com",)
         assert actor.sent[0]["kwargs"] == {"template": "welcome"}
 
-    async def test_queue_kwarg_overrides_actor_default(
+    async def test_queue_override_fails_instead_of_becoming_message_metadata(
         self,
         adapter_with_global_broker,
     ) -> None:
@@ -83,8 +83,43 @@ class TestSubmitTask:
             kwargs={},
             queue="high-priority",
         )
+        assert result.status == "failed"
+        assert "cannot override" in (result.error or "")
+        assert actor.sent == []
+
+    async def test_passed_broker_is_authoritative_over_global(self, broker):
+        actor = broker.actors["myapp.tasks.send_email"]
+        other = FakeBroker()
+        other.register(type(actor)(actor_name="myapp.tasks.send_email"))
+        saved = dramatiq.broker.global_broker
+        dramatiq.broker.global_broker = other
+        try:
+            result = await DramatiqEngineAdapter(broker=broker).submit_task(
+                "myapp.tasks.send_email",
+                args=("passed",),
+            )
+        finally:
+            dramatiq.broker.global_broker = saved
+
         assert result.status == "success"
-        assert actor.sent[-1]["queue_name"] == "high-priority"
+        assert actor.sent[-1]["args"] == ("passed",)
+        assert other.get_actor("myapp.tasks.send_email").sent == []
+
+    @pytest.mark.parametrize(("option", "value"), [("eta", 123.0), ("priority", 9)])
+    async def test_unsupported_delivery_option_does_not_enqueue(
+        self,
+        broker,
+        option,
+        value,
+    ):
+        actor = broker.actors["myapp.tasks.send_email"]
+        result = await DramatiqEngineAdapter(broker=broker).submit_task(
+            "myapp.tasks.send_email",
+            **{option: value},
+        )
+        assert result.status == "failed"
+        assert option in (result.error or "")
+        assert actor.sent == []
 
     async def test_unregistered_actor_uses_message_fallback(
         self,

@@ -116,16 +116,10 @@ except ImportError:  # pragma: no cover - depends on installed extras
 class Abortable(_RealAbortable):  # type: ignore[valid-type, misc]
     """Stand-in for the ``Abortable`` middleware.
 
-    The adapter's ``_has_abortable`` detection has two modes and this
-    fake must satisfy whichever is active:
-
-    - ``dramatiq-abort`` NOT installed: a structural fallback
-      (``type(mw).__name__ == "Abortable"``) matches this class by
-      name (it subclasses ``object`` in that env).
-    - ``dramatiq-abort`` installed: a strict
-      ``isinstance(mw, dramatiq_abort.Abortable)`` check. Subclassing
-      the real ``Abortable`` here keeps this fake passing that check
-      too, so the detection logic is exercised correctly either way.
+    Capability promotion requires the real ``dramatiq-abort`` package and an
+    ``isinstance(mw, dramatiq_abort.Abortable)`` match. Subclassing the real
+    class keeps this fake on that production detection path when the optional
+    test extra is installed.
 
     ``__init__`` is a deliberate no-op: the real
     ``dramatiq_abort.Abortable`` requires an event-backend argument
@@ -148,9 +142,17 @@ def broker() -> FakeBroker:
 
 
 @pytest.fixture
-def broker_with_abortable(broker: FakeBroker) -> FakeBroker:
+def broker_with_abortable(broker: FakeBroker, monkeypatch: pytest.MonkeyPatch) -> FakeBroker:
     """Broker that has Abortable middleware in its stack."""
-    broker.add_middleware(Abortable())
+    middleware = Abortable()
+    broker.add_middleware(middleware)
+
+    # Minimal test environments intentionally omit the optional package. Patch
+    # the same lazy type loader production uses so this fixture represents an
+    # installed extra with an exact type match, never a class-name fallback.
+    from z4j_dramatiq import engine as engine_module
+
+    monkeypatch.setattr(engine_module, "_load_abortable_type", lambda: type(middleware))
     return broker
 
 
