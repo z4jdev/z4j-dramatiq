@@ -10,6 +10,7 @@ from typing import Any
 
 from z4j_core.models import (
     CommandResult,
+    DeadLetterPage,
     DiscoveryHints,
     Event,
     Queue,
@@ -24,11 +25,17 @@ from z4j_core.version import PROTOCOL_VERSION
 from z4j_dramatiq.actions import (
     bulk_retry_action,
     cancel_task_action,
+    list_dead_letters_action,
     purge_queue_action,
     requeue_dead_letter_action,
     retry_task_action,
 )
-from z4j_dramatiq.capabilities import ABORTABLE_CAPABILITIES, DEFAULT_CAPABILITIES
+from z4j_dramatiq.actions.dlq import LISTABLE_BROKER_KINDS, broker_kind
+from z4j_dramatiq.capabilities import (
+    ABORTABLE_CAPABILITIES,
+    DEAD_LETTER_LISTING_CAPABILITIES,
+    DEFAULT_CAPABILITIES,
+)
 from z4j_dramatiq.discovery import discover_runtime
 from z4j_dramatiq.events.mapper import DRAMATIQ_ENGINE_NAME
 from z4j_dramatiq.events.middleware import Z4JMiddleware
@@ -402,6 +409,23 @@ class DramatiqEngineAdapter:
             task_id=task_id,
         )
 
+    async def list_dead_letters(
+        self,
+        queue: str | None = None,
+        *,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> DeadLetterPage:
+        """Page the broker's ``<queue>.XQ`` dead letters (see the dlq action)."""
+        return await list_dead_letters_action(
+            self.broker,
+            queue=queue,
+            limit=limit,
+            cursor=cursor,
+            redaction=self.redaction,
+            engine_name=self.name,
+        )
+
     async def rate_limit(
         self,
         task_name: str,
@@ -433,7 +457,12 @@ class DramatiqEngineAdapter:
     # ------------------------------------------------------------------
 
     def capabilities(self) -> set[str]:
-        return set(ABORTABLE_CAPABILITIES if _has_abortable(self.broker) else DEFAULT_CAPABILITIES)
+        caps = set(ABORTABLE_CAPABILITIES if _has_abortable(self.broker) else DEFAULT_CAPABILITIES)
+        # Dead-letter listing is honest only where the broker's ``.XQ`` store
+        # can be read back: Redis, RabbitMQ (count only), and the StubBroker.
+        if broker_kind(self.broker) in LISTABLE_BROKER_KINDS:
+            caps |= DEAD_LETTER_LISTING_CAPABILITIES
+        return caps
 
 
 # ---------------------------------------------------------------------------

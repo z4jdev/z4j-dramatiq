@@ -16,7 +16,7 @@ Dramatiq has no upstream scheduler, so for periodic schedules pair with
 - Dramatiq 1.14+ and <3 (capped below the eventual Dramatiq 3 breaking-major)
 - Python 3.11+
 
-Full per-adapter matrix at <https://z4j.dev/reference/compatibility/>.
+Full per-adapter matrix at <https://docs.z4j.com/reference/compatibility/>.
 
 ## What it ships
 
@@ -66,7 +66,7 @@ For schedules, install [`z4j-scheduler`](https://github.com/z4jdev/z4j-scheduler
 
 ## Documentation
 
-Full docs at [z4j.dev/engines/dramatiq/](https://z4j.dev/engines/dramatiq/).
+Full docs at [docs.z4j.com/engines/dramatiq/](https://docs.z4j.com/engines/dramatiq/).
 
 ## License
 
@@ -75,7 +75,7 @@ Apache-2.0, see [LICENSE](LICENSE).
 ## Links
 
 - Homepage: https://z4j.com
-- Documentation: https://z4j.dev
+- Documentation: https://docs.z4j.com
 - PyPI: https://pypi.org/project/z4j-dramatiq/
 - Issues: https://github.com/z4jdev/z4j-dramatiq/issues
 - Changelog: [CHANGELOG.md](CHANGELOG.md)

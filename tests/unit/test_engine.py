@@ -145,6 +145,7 @@ class TestAsyncMethodShape:
             "purge_queue",
             "bulk_retry",
             "requeue_dead_letter",
+            "list_dead_letters",
             "rate_limit",
             "restart_worker",
         ],

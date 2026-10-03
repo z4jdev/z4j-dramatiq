@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.12.0 (2026-10-03)
+
+* Advertise `list_dead_letters` where the broker's dead-letter store can be
+  read without consuming it. On Redis the `dlq.list` command lists the
+  `<queue>.XQ` store with full entries (id, actor, dead-letter time,
+  attempts, a redacted traceback excerpt); bodies are decoded as JSON only,
+  so a `PickleEncoder` deployment gets id, queue and time with an empty task
+  name and excerpt. On RabbitMQ the page carries `total` only, the `.XQ`
+  message count, because AMQP has no non-destructive read of queued
+  messages. `requeue_dead_letter` stays absent: Dramatiq has no
+  resurrect-by-id API.
+
 ## 1.11.0 (2026-09-10)
 
 * Align runtime version metadata and sibling dependency floors with the coordinated 1.11.0 release.
