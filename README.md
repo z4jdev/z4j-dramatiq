@@ -13,7 +13,7 @@ Dramatiq has no upstream scheduler, so for periodic schedules pair with
 
 ## Compatibility
 
-- Dramatiq 1.14+ and <3 (capped below the eventual Dramatiq 3 breaking-major)
+- Dramatiq 1.14+ (no upper bound)
 - Python 3.11+
 
 Full per-adapter matrix at <https://docs.z4j.com/reference/compatibility/>.

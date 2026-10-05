@@ -1,6 +1,6 @@
 [project]
 name = "z4j-dramatiq"
-version = "1.12.0"
+version = "1.12.1"
 description = "z4j Dramatiq queue engine adapter (Apache 2.0)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,8 +30,9 @@ dependencies = [
     # range. Imports are deferred and target the long-stable
     # get_broker / Message / Middleware surface. The previous >=2.1.0 floor
     # excluded the Dramatiq 1.15 / 1.16 deployed majority for no
-    # functional reason. ``<3`` guards a future 3.0 break.
-    "dramatiq>=1.14,<3",
+    # functional reason. No upper bound: a z4j requirement must not hold
+    # Dramatiq below its newest release.
+    "dramatiq>=1.14",
 ]
 
 [project.optional-dependencies]
@@ -45,8 +46,8 @@ dependencies = [
 # blows up pip's resolver when both are installed in the same env.
 # Relaxed to the same 1.14 floor as the base dep; broker extras
 # stay in lockstep with the parent dramatiq pin.
-redis = ["dramatiq[redis]>=1.14,<3"]
-rabbitmq = ["dramatiq[rabbitmq]>=1.14,<3"]
+redis = ["dramatiq[redis]>=1.14"]
+rabbitmq = ["dramatiq[rabbitmq]>=1.14"]
 # Enables pending-task cancellation through the external Abortable middleware.
 # z4j deliberately does not request its running-abort mode because that
 # exception can interact with Dramatiq's Retries middleware.

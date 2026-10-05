@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.1 (2026-10-05)
+
+* The requirement is `dramatiq>=1.14` with no upper bound, in the base
+  dependency and in the `redis` and `rabbitmq` extras. No code change.
+
 ## 1.12.0 (2026-10-03)
 
 * Advertise `list_dead_letters` where the broker's dead-letter store can be
