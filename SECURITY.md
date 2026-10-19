@@ -15,7 +15,11 @@ policy, and published advisories are maintained in the
 
 This adapter runs inside Dramatiq workers with their broker access. An
 authenticated brain can submit, retry with complete operator replacement
-inputs, and purge. Actor and argument validation, broker routing, and middleware
-event mapping are package-specific security surfaces; transport, redaction, and
-authorization policy remain owned by `z4j-core` and the brain. Cancel, bulk
-retry, and dead-letter replay are not advertised and direct calls fail closed.
+inputs, and purge. When the broker carries the dramatiq-abort `Abortable`
+middleware it can also cancel pending messages, and on Redis and RabbitMQ
+brokers it can list dead letters (RabbitMQ reports a count only). Actor and
+argument validation, broker routing, and middleware event mapping are
+package-specific security surfaces; transport, redaction, and authorization
+policy remain owned by `z4j-core` and the brain. Bulk retry and dead-letter
+replay are not advertised, and direct calls to them, or to cancel without the
+`Abortable` middleware, fail closed.

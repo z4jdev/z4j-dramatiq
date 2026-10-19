@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.0 (2026-10-19)
+
+- Align package version and sibling dependency floors with the coordinated 1.13.0 release. No additional adapter behavior changes in this wave.
+
 ## 1.12.1 (2026-10-05)
 
 * The requirement is `dramatiq>=1.14` with no upper bound, in the base

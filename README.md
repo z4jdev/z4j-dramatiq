@@ -60,9 +60,10 @@ For schedules, install [`z4j-scheduler`](https://github.com/z4jdev/z4j-scheduler
 
 - Lifecycle-capture failures are isolated from Dramatiq middleware and actor
   code; capture hooks make no brain network request inline.
-- The in-process event queue and SQLite outbound buffer are bounded. Queue
-  overflow drops new events and buffer pressure evicts oldest rows; both losses
-  are logged.
+- The in-process event queue and SQLite outbound buffer are bounded. A full
+  queue evicts its oldest queued event to admit the new one, up to three
+  times. Queue overflow drops new events only if that cannot make room.
+  Buffer pressure evicts oldest rows. Every loss is logged.
 
 ## Documentation
 
@@ -70,7 +71,7 @@ Full docs at [docs.z4j.com/engines/dramatiq/](https://docs.z4j.com/engines/drama
 
 ## License
 
-Apache-2.0, see [LICENSE](LICENSE).
+Apache-2.0, see [LICENSE](https://github.com/z4jdev/z4j-dramatiq/blob/main/LICENSE).
 
 ## Links
 
@@ -78,5 +79,5 @@ Apache-2.0, see [LICENSE](LICENSE).
 - Documentation: https://docs.z4j.com
 - PyPI: https://pypi.org/project/z4j-dramatiq/
 - Issues: https://github.com/z4jdev/z4j-dramatiq/issues
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Security: security@z4j.com (see [SECURITY.md](SECURITY.md))
+- Changelog: [CHANGELOG.md](https://github.com/z4jdev/z4j-dramatiq/blob/main/CHANGELOG.md)
+- Security: security@z4j.com (see [SECURITY.md](https://github.com/z4jdev/z4j-dramatiq/blob/main/SECURITY.md))
